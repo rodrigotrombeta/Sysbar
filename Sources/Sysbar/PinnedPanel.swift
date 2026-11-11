@@ -20,8 +20,11 @@ struct PinnedStatsView: View {
     let snapshot: SystemStatsSnapshot
     let refreshInterval: TimeInterval
     let side: PinSide
+    let appearance: AppAppearance
     let onToggleSide: () -> Void
     let onUnpin: () -> Void
+    let onActivityMonitor: () -> Void
+    let onCycleAppearance: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +33,14 @@ struct PinnedStatsView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button(action: onActivityMonitor) {
+                    Image(systemName: "waveform.path.ecg")
+                }
+                .help(tr("Open Activity Monitor", "Abrir Monitor de Atividade"))
+                Button(action: onCycleAppearance) {
+                    Image(systemName: appearance.symbol)
+                }
+                .help(tr("Appearance: ", "Aparência: ") + appearance.title)
                 Button(action: onToggleSide) {
                     Image(systemName: side == .left ? "arrow.right.to.line" : "arrow.left.to.line")
                 }
@@ -56,10 +67,12 @@ struct PinnedStatsView: View {
 @MainActor
 final class PinnedPanelController {
     private var panel: NSPanel?
-    private var host: NSHostingView<PinnedStatsView>?
+    private var host: FirstMouseHostingView<PinnedStatsView>?
     private var screenObserver: NSObjectProtocol?
     var onToggleSide: () -> Void = {}
     var onUnpin: () -> Void = {}
+    var onActivityMonitor: () -> Void = {}
+    var onCycleAppearance: () -> Void = {}
 
     var isShown: Bool { panel != nil }
 
@@ -68,7 +81,7 @@ final class PinnedPanelController {
         if let host {
             host.rootView = view
         } else {
-            let host = NSHostingView(rootView: view)
+            let host = FirstMouseHostingView(rootView: view)
             let effect = NSVisualEffectView()
             effect.material = .popover
             effect.blendingMode = .behindWindow
@@ -100,6 +113,7 @@ final class PinnedPanelController {
                 MainActor.assumeIsolated { self?.reposition() }
             }
         }
+        panel?.appearance = Settings.appearance.nsAppearance
         reposition()
         panel?.orderFrontRegardless()
     }
@@ -120,8 +134,11 @@ final class PinnedPanelController {
 
     private func makeView(_ s: SystemStatsSnapshot, _ i: TimeInterval, _ side: PinSide) -> PinnedStatsView {
         PinnedStatsView(snapshot: s, refreshInterval: i, side: side,
+                        appearance: Settings.appearance,
                         onToggleSide: { [weak self] in self?.onToggleSide() },
-                        onUnpin: { [weak self] in self?.onUnpin() })
+                        onUnpin: { [weak self] in self?.onUnpin() },
+                        onActivityMonitor: { [weak self] in self?.onActivityMonitor() },
+                        onCycleAppearance: { [weak self] in self?.onCycleAppearance() })
     }
 
     /// Docks the panel to the chosen edge of the main screen, 8 pt inset,
@@ -138,4 +155,10 @@ final class PinnedPanelController {
         panel.setFrame(frame, display: true)
         host.frame = NSRect(origin: .zero, size: frame.size)
     }
+}
+
+/// The pinned panel never becomes key (it must not steal focus), so its
+/// buttons need to act on the first click.
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

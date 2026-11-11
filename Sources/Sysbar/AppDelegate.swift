@@ -16,7 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let pinned = PinnedPanelController()
 
     private let menu = NSMenu()
-    private var statsHost: NSHostingView<SystemStatsPanelStack>!
+    /// Exists only while the menu is open: a live NSHostingView left attached
+    /// to a closed menu kept ~80 MB of graphics memory alive.
+    private var statsHost: NSHostingView<SystemStatsPanelStack>?
+    private let statsItem = NSMenuItem()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -39,6 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pinned.onUnpin = { [weak self] in
             Settings.pinSide = nil
             self?.applyPin()
+        }
+        pinned.onActivityMonitor = { [weak self] in self?.openActivityMonitor() }
+        pinned.onCycleAppearance = { [weak self] in
+            Settings.appearance = Settings.appearance.next
+            self?.settingsChanged()
         }
         applyPin()
     }
@@ -70,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         snapshot = sampler.sample()
         updateIcon()
         if menuIsOpen {
-            statsHost.rootView = statsView()
+            statsHost?.rootView = statsView()
         }
         if let side = Settings.pinSide {
             pinned.update(snapshot: snapshot, interval: Settings.interval, side: side)
@@ -82,7 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let config = StatusIconRenderer.Config(
             metrics: Settings.metrics,
             style: Settings.style,
-            colorMode: Settings.colorMode,
+            colorModes: Dictionary(uniqueKeysWithValues:
+                IconMetric.allCases.map { ($0, Settings.colorMode(for: $0)) }),
             showLabel: Settings.showLabel
         )
         button.image = StatusIconRenderer.image(
@@ -97,14 +106,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - NSMenuDelegate
 
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
+        attachStatsHost()
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
         menuIsOpen = true
-        statsHost.rootView = statsView()
-        statsHost.setFrameSize(statsHost.fittingSize)
+        attachStatsHost()
     }
 
     func menuDidClose(_ menu: NSMenu) {
+        guard menu === self.menu else { return }
         menuIsOpen = false
+        // Release the SwiftUI view (and its render buffers) while closed.
+        statsItem.view = nil
+        statsHost = nil
+    }
+
+    private func attachStatsHost() {
+        if let statsHost {
+            statsHost.rootView = statsView()
+        } else {
+            let host = NSHostingView(rootView: statsView())
+            host.appearance = Settings.appearance.nsAppearance
+            statsHost = host
+            statsItem.view = host
+        }
+        statsHost?.setFrameSize(statsHost?.fittingSize ?? .zero)
     }
 
     // MARK: - Menu
@@ -112,10 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func rebuildMenu() {
         menu.removeAllItems()
 
-        statsHost = NSHostingView(rootView: statsView())
-        statsHost.setFrameSize(statsHost.fittingSize)
-        let statsItem = NSMenuItem()
-        statsItem.view = statsHost
+        statsItem.view = nil
+        statsHost = nil
         menu.addItem(statsItem)
         menu.addItem(.separator())
 
@@ -124,7 +152,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let metricsMenu = NSMenu()
         let selected = Settings.metrics
         for metric in IconMetric.allCases {
-            if metric.hasOwnChart {
+            if metric == .network {
+                let parent = NSMenuItem(title: metric.title, action: nil, keyEquivalent: "")
+                parent.state = selected.contains(metric) ? .on : .off
+                let sub = NSMenu()
+                sub.addItem(menuItem(tr("Show in icon", "Mostrar no ícone"), #selector(toggleMetric(_:)),
+                                     metric.rawValue, on: selected.contains(metric)))
+                sub.addItem(.separator())
+                for style in NetworkStyle.allCases {
+                    sub.addItem(menuItem(style.title, #selector(selectNetworkStyle(_:)),
+                                         style.rawValue, on: Settings.networkStyle == style))
+                }
+                parent.submenu = sub
+                metricsMenu.addItem(parent)
+            } else if metric.hasOwnChart {
                 if metric == .memory { metricsMenu.addItem(.separator()) }
                 let parent = NSMenuItem(title: metric.title, action: nil, keyEquivalent: "")
                 parent.state = selected.contains(metric) ? .on : .off
@@ -157,12 +198,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                    nil, on: Settings.showLabel))
         addSubmenu(tr("Icon style", "Estilo do ícone"), styleMenu)
 
+        // Colors: one submenu per metric, plus "All metrics" to set them at once.
         let colorMenu = NSMenu()
+        let modes = IconMetric.allCases.map(Settings.colorMode(for:))
+        let allItem = NSMenuItem(title: tr("All metrics", "Todas as métricas"), action: nil, keyEquivalent: "")
+        let allMenu = NSMenu()
         for mode in IconColorMode.allCases {
-            colorMenu.addItem(menuItem(mode.title, #selector(selectColor(_:)), mode.rawValue,
-                                       on: Settings.colorMode == mode))
+            allMenu.addItem(menuItem(mode.title, #selector(selectColor(_:)), "*:\(mode.rawValue)",
+                                     on: modes.allSatisfy { $0 == mode }))
+        }
+        allItem.submenu = allMenu
+        colorMenu.addItem(allItem)
+        colorMenu.addItem(.separator())
+        for metric in IconMetric.allCases {
+            let current = Settings.colorMode(for: metric)
+            let item = NSMenuItem(title: metric.title, action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            for mode in IconColorMode.allCases {
+                sub.addItem(menuItem(mode.title, #selector(selectColor(_:)),
+                                     "\(metric.rawValue):\(mode.rawValue)", on: current == mode))
+            }
+            item.submenu = sub
+            colorMenu.addItem(item)
         }
         addSubmenu(tr("Colors", "Cores"), colorMenu)
+
+        let appearanceMenu = NSMenu()
+        for appearance in AppAppearance.allCases {
+            let item = menuItem(appearance.title, #selector(selectAppearance(_:)), appearance.rawValue,
+                                on: Settings.appearance == appearance)
+            item.image = NSImage(systemSymbolName: appearance.symbol, accessibilityDescription: nil)
+            appearanceMenu.addItem(item)
+        }
+        addSubmenu(tr("Appearance", "Aparência"), appearanceMenu)
 
         let intervalMenu = NSMenu()
         for interval in Settings.intervals {
@@ -196,14 +264,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pinItem.submenu = pinMenu
         menu.addItem(pinItem)
 
+        let activity = menuItem(tr("Open Activity Monitor", "Abrir Monitor de Atividade"),
+                                #selector(openActivityMonitor), nil, on: false)
+        activity.image = NSImage(systemSymbolName: "waveform.path.ecg", accessibilityDescription: nil)
+        activity.keyEquivalent = "a"
+        menu.addItem(activity)
+
         menu.addItem(menuItem(tr("Open at login", "Abrir ao iniciar sessão"), #selector(toggleLogin(_:)),
                               nil, on: SMAppService.mainApp.status == .enabled))
-        menu.addItem(menuItem(tr("Open Activity Monitor", "Abrir Monitor de Atividade"),
-                              #selector(openActivityMonitor), nil, on: false))
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: tr("Quit Sysbar", "Sair do Sysbar"),
                                 action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        applyAppearance(to: menu)
+    }
+
+    /// Light / Dark / System for the menu (and every submenu) and the
+    /// pinned panel. The menu bar icon itself always follows the menu bar.
+    private func applyAppearance(to menu: NSMenu) {
+        menu.appearance = Settings.appearance.nsAppearance
+        statsHost?.appearance = Settings.appearance.nsAppearance
+        for item in menu.items {
+            if let sub = item.submenu { applyAppearance(to: sub) }
+        }
     }
 
     private func menuItem(_ title: String, _ action: Selector, _ object: Any?, on: Bool) -> NSMenuItem {
@@ -282,9 +365,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func selectColor(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        let parts = raw.split(separator: ":").map(String.init)
+        guard parts.count == 2, let mode = IconColorMode(rawValue: parts[1]) else { return }
+        if parts[0] == "*" {
+            IconMetric.allCases.forEach { Settings.setColorMode(mode, for: $0) }
+        } else if let metric = IconMetric(rawValue: parts[0]) {
+            Settings.setColorMode(mode, for: metric)
+        }
+        settingsChanged()
+    }
+
+    @objc private func selectNetworkStyle(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
-              let mode = IconColorMode(rawValue: raw) else { return }
-        Settings.colorMode = mode
+              let style = NetworkStyle(rawValue: raw) else { return }
+        Settings.networkStyle = style
+        if !Settings.metrics.contains(.network) { Settings.metrics = Settings.metrics + [.network] }
+        settingsChanged()
+    }
+
+    @objc private func selectAppearance(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let appearance = AppAppearance(rawValue: raw) else { return }
+        Settings.appearance = appearance
         settingsChanged()
     }
 
@@ -312,7 +415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildMenu()
     }
 
-    @objc private func openActivityMonitor() {
+    @objc func openActivityMonitor() {
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.ActivityMonitor") {
             NSWorkspace.shared.openApplication(at: url, configuration: .init())
         }

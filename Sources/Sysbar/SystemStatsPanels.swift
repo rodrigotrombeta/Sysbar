@@ -245,6 +245,49 @@ struct DiskStatsPanel: View {
     }
 }
 
+// MARK: - Network (Sysbar addition)
+
+struct NetworkStatsPanel: View {
+    let snapshot: SystemStatsSnapshot
+    let refreshInterval: TimeInterval
+
+    private let theme = StatsTheme()
+    private var downColor: Color { Color(nsColor: .systemBlue) }
+    private var upColor: Color { Color(nsColor: .systemRed) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            StatsPanelHeader(title: tr("Network", "Rede"))
+            StatsValueRow(label: "↓ " + tr("Download", "Download"),
+                          value: SystemStatsSampler.formatRate(snapshot.networkIO?.read))
+            StatsValueRow(label: "↑ " + tr("Upload", "Upload"),
+                          value: SystemStatsSampler.formatRate(snapshot.networkIO?.write))
+            StatsValueRow(label: tr("Interface", "Interface"),
+                          value: snapshot.networkInterface ?? "–")
+            StatsValueRow(label: tr("IP address", "Endereço IP"),
+                          value: snapshot.networkAddress ?? tr("Offline", "Desconectado"))
+            StatsPanelCaption(
+                text: tr("Download (blue) / Upload (red)", "Download (azul) / Upload (vermelho)"),
+                window: StatsFormat.window(sampleCount: snapshot.networkInHistory.count,
+                                           interval: refreshInterval)
+            )
+            ZStack {
+                MetricSparkline(values: snapshot.networkOutHistory, color: upColor,
+                                height: 26, domain: 0...peak)
+                MetricSparkline(values: snapshot.networkInHistory, color: downColor,
+                                height: 26, domain: 0...peak)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(width: panelWidth)
+    }
+
+    private var peak: Double {
+        max(64_000, snapshot.networkInHistory.max() ?? 0, snapshot.networkOutHistory.max() ?? 0)
+    }
+}
+
 // MARK: - Combined popover stack
 
 /// The enabled panels stacked into one popover for the combined CPU/GPU/MEM
@@ -282,6 +325,8 @@ struct SystemStatsPanelStack: View {
             MemoryStatsPanel(snapshot: snapshot)
         case .disk:
             DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
+        case .network:
+            NetworkStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         }
     }
 }

@@ -34,6 +34,8 @@ struct StatsTheme {
     var rowSep: Color { Color(nsColor: .separatorColor) }
 }
 
+/// Sparkline drawn with Shapes (not Canvas): Canvas re-rendered through
+/// GPU-backed buffers every tick and cost tens of MB in a pinned panel.
 struct MetricSparkline: View {
     let values: [Double]
     let color: Color
@@ -43,50 +45,45 @@ struct MetricSparkline: View {
     var domain: ClosedRange<Double>? = nil
 
     var body: some View {
-        Canvas { context, size in
-            guard values.count > 1, size.width > 0, size.height > 0 else {
-                return
-            }
-            let low = domain?.lowerBound ?? (values.min() ?? 0)
-            let high = domain?.upperBound ?? (values.max() ?? 0)
-            let span = domain.map { $0.upperBound - $0.lowerBound }
-                ?? (high - low) * 1.05
-            let isFlat = span <= .ulpOfOne
-            let stepX = size.width / CGFloat(values.count - 1)
-
-            let lineWidth: CGFloat = 1.2
-            let plotTop = lineWidth / 2
-            let plotHeight = size.height - lineWidth
-
-            var trace = Path()
-            for (index, value) in values.enumerated() {
-                let normalized = isFlat ? 0.5 : (value - low) / span
-                let point = CGPoint(
-                    x: CGFloat(index) * stepX,
-                    y: plotTop + plotHeight * (1 - CGFloat(normalized))
-                )
-                if index == 0 {
-                    trace.move(to: point)
-                } else {
-                    trace.addLine(to: point)
-                }
-            }
-
-            var fill = trace
-            fill.addLine(to: CGPoint(x: size.width, y: size.height))
-            fill.addLine(to: CGPoint(x: 0, y: size.height))
-            fill.closeSubpath()
-            context.fill(
-                fill,
-                with: .linearGradient(
-                    Gradient(colors: [color.opacity(0.22), color.opacity(0.02)]),
-                    startPoint: .zero,
-                    endPoint: CGPoint(x: 0, y: size.height)
-                )
-            )
-            context.stroke(trace, with: .color(color), lineWidth: lineWidth)
+        ZStack {
+            SparklineShape(values: values, domain: domain, closed: true)
+                .fill(LinearGradient(colors: [color.opacity(0.22), color.opacity(0.02)],
+                                     startPoint: .top, endPoint: .bottom))
+            SparklineShape(values: values, domain: domain, closed: false)
+                .stroke(color, style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
         }
         .frame(height: height)
         .accessibilityHidden(true)
+    }
+}
+
+private struct SparklineShape: Shape {
+    let values: [Double]
+    let domain: ClosedRange<Double>?
+    let closed: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard values.count > 1, rect.width > 0, rect.height > 0 else { return path }
+        let low = domain?.lowerBound ?? (values.min() ?? 0)
+        let high = domain?.upperBound ?? (values.max() ?? 0)
+        let span = domain.map { $0.upperBound - $0.lowerBound } ?? (high - low) * 1.05
+        let isFlat = span <= .ulpOfOne
+        let stepX = rect.width / CGFloat(values.count - 1)
+        // Inset by half the stroke so a series at 0% / 100% isn't clipped.
+        let top: CGFloat = 0.6
+        let plotHeight = rect.height - 1.2
+        for (index, value) in values.enumerated() {
+            let normalized = isFlat ? 0.5 : min(1, max(0, (value - low) / span))
+            let point = CGPoint(x: CGFloat(index) * stepX,
+                                y: top + plotHeight * (1 - CGFloat(normalized)))
+            index == 0 ? path.move(to: point) : path.addLine(to: point)
+        }
+        if closed {
+            path.addLine(to: CGPoint(x: rect.width, y: rect.height))
+            path.addLine(to: CGPoint(x: 0, y: rect.height))
+            path.closeSubpath()
+        }
+        return path
     }
 }

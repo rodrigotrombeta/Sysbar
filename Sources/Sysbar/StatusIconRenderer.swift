@@ -11,6 +11,7 @@ enum StatusIconRenderer {
     private static let barWidth: CGFloat = 7
     private static let percentWidth: CGFloat = 28
     private static let pieWidth: CGFloat = 18
+    private static let speedWidth: CGFloat = 50
     /// I/O charts never scale below this (bytes/s), so idle noise stays flat.
     private static let ioFloor: Double = 256_000
     private static let gap: CGFloat = 2
@@ -21,8 +22,14 @@ enum StatusIconRenderer {
     struct Config {
         var metrics: [IconMetric]
         var style: IconStyle
-        var colorMode: IconColorMode
+        var colorModes: [IconMetric: IconColorMode]
         var showLabel: Bool
+
+        func colorMode(_ metric: IconMetric) -> IconColorMode { colorModes[metric] ?? .metric }
+
+        /// All-monochrome icons are template images (the system tints them);
+        /// mixed icons draw their monochrome widgets in labelColor instead.
+        var isTemplate: Bool { metrics.allSatisfy { colorMode($0) == .monochrome } }
     }
 
     static func image(
@@ -49,7 +56,7 @@ enum StatusIconRenderer {
             }
             return true
         }
-        image.isTemplate = config.colorMode == .monochrome
+        image.isTemplate = config.isTemplate
         return image
     }
 
@@ -57,6 +64,9 @@ enum StatusIconRenderer {
 
     private static func width(for metric: IconMetric, config: Config) -> CGFloat {
         let label = config.showLabel ? labelWidth + gap : 0
+        if metric == .network {
+            return label + (Settings.networkStyle == .chart ? chartWidth : speedWidth)
+        }
         if let chart = metric.chartKind {
             switch chart {
             case .pie: return label + pieWidth
@@ -81,9 +91,35 @@ enum StatusIconRenderer {
         originX: CGFloat
     ) {
         let value = metric.value(in: snapshot)
-        let accent = color(for: metric, value: value, mode: config.colorMode)
-        let textColor = config.colorMode == .monochrome ? NSColor.black : NSColor.labelColor
+        let mode = config.colorMode(metric)
+        let ink: NSColor = config.isTemplate ? .black : .labelColor
+        let accent = color(for: metric, value: value, mode: mode, ink: ink)
+        let textColor = ink
+        let mono = mode == .monochrome
         var x = originX
+
+        if metric == .network {
+            if config.showLabel {
+                drawStackedLabel(metric.shortLabel, color: textColor,
+                                 rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
+                x += labelWidth + gap
+            }
+            let io = metric.ioHistory(in: snapshot)
+            if Settings.networkStyle == .chart {
+                drawIOChart(read: io.read, write: io.write,
+                            readColor: mono ? ink : .systemBlue,
+                            writeColor: mono ? ink : .systemRed,
+                            frameColor: textColor,
+                            rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
+            } else {
+                drawSpeed(down: snapshot.networkIO?.read, up: snapshot.networkIO?.write,
+                          textColor: textColor,
+                          downColor: mono ? ink : .systemBlue,
+                          upColor: mono ? ink : .systemRed,
+                          rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
+            }
+            return
+        }
 
         if let chart = metric.chartKind {
             if config.showLabel {
@@ -94,20 +130,19 @@ enum StatusIconRenderer {
             switch chart {
             case .pie:
                 drawPie(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                           accent: accent, mode: config.colorMode),
-                        track: trackColor(config.colorMode),
+                                           accent: accent, mode: mode),
+                        track: trackColor(mode, ink: ink),
                         rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
             case .bar:
                 drawBar(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                           accent: accent, mode: config.colorMode),
-                        track: trackColor(config.colorMode), frameColor: textColor,
+                                           accent: accent, mode: mode),
+                        track: trackColor(mode, ink: ink), frameColor: textColor,
                         rect: NSRect(x: x, y: 0, width: barWidth, height: height))
             case .io:
                 let io = metric.ioHistory(in: snapshot)
-                let mono = config.colorMode == .monochrome
                 drawIOChart(read: io.read, write: io.write,
-                            readColor: mono ? .black : .systemBlue,
-                            writeColor: mono ? .black : .systemRed,
+                            readColor: mono ? ink : .systemBlue,
+                            writeColor: mono ? ink : .systemRed,
                             frameColor: textColor,
                             rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
             }
@@ -147,9 +182,10 @@ enum StatusIconRenderer {
         }
     }
 
-    private static func color(for metric: IconMetric, value: Double?, mode: IconColorMode) -> NSColor {
+    private static func color(for metric: IconMetric, value: Double?, mode: IconColorMode,
+                              ink: NSColor) -> NSColor {
         switch mode {
-        case .monochrome: return .black
+        case .monochrome: return ink
         case .metric: return metric.color
         case .utilization:
             let v = value ?? 0
@@ -230,8 +266,27 @@ enum StatusIconRenderer {
         return [(value ?? 0, accent)]
     }
 
-    private static func trackColor(_ mode: IconColorMode) -> NSColor {
-        mode == .monochrome ? NSColor.black.withAlphaComponent(0.3) : MemoryPalette.track
+    private static func trackColor(_ mode: IconColorMode, ink: NSColor) -> NSColor {
+        mode == .monochrome ? ink.withAlphaComponent(0.3) : MemoryPalette.track
+    }
+
+    /// Two right-aligned lines, Stats-style: "↓ 1.2 MB/s" over "↑ 34 KB/s".
+    private static func drawSpeed(down: Double?, up: Double?, textColor: NSColor,
+                                  downColor: NSColor, upColor: NSColor, rect: NSRect) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .right
+        func line(_ arrow: String, _ value: Double?, _ arrowColor: NSColor, y: CGFloat) {
+            let s = NSMutableAttributedString(
+                string: arrow + " ",
+                attributes: [.font: font, .foregroundColor: arrowColor, .paragraphStyle: para])
+            s.append(NSAttributedString(
+                string: SystemStatsSampler.formatRate(value),
+                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
+            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+        }
+        line("↑", up, upColor, y: rect.minY + 8)
+        line("↓", down, downColor, y: rect.minY - 1)
     }
 
     private static func drawBar(segments: [(Double, NSColor)], track: NSColor,

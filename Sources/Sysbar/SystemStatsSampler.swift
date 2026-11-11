@@ -27,6 +27,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case gpu
     case memory
     case disk
+    case network
 
     var tag: String {
         switch self {
@@ -34,6 +35,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
         case .gpu: return "GPU"
         case .memory: return "MEM"
         case .disk: return "DISK"
+        case .network: return "NET"
         }
     }
 }
@@ -105,6 +107,13 @@ struct SystemStatsSnapshot: Sendable {
     var memoryInHistory: [Double] = []
     var memoryOutHistory: [Double] = []
 
+    /// Network throughput: read = download, write = upload (bytes/s).
+    var networkIO: IORate?
+    var networkInHistory: [Double] = []
+    var networkOutHistory: [Double] = []
+    var networkInterface: String?
+    var networkAddress: String?
+
     /// GPU in-use memory as a fraction of physical memory (unified memory).
     var gpuMemoryFraction: Double? {
         guard let inUse = gpuMemoryInUseBytes, memory.totalBytes > 0 else { return nil }
@@ -133,6 +142,9 @@ final class SystemStatsSampler {
     private var memoryOutHistory: [Double] = []
     private var previousDiskBytes: (read: UInt64, write: UInt64, time: TimeInterval)?
     private var previousPageBytes: (pagein: UInt64, pageout: UInt64, time: TimeInterval)?
+    private var networkInHistory: [Double] = []
+    private var networkOutHistory: [Double] = []
+    private var previousNetBytes: (rx: UInt64, tx: UInt64, time: TimeInterval)?
     private var cachedDisk: SystemStatsSnapshot.Disk?
     private var diskReadAt: TimeInterval = -.infinity
     private let eCoreCount = SystemStatsSampler.readECoreCount()
@@ -196,6 +208,23 @@ final class SystemStatsSampler {
             previousDiskBytes = (bytes.read, bytes.write, now)
         }
 
+        if let net = Self.readNetwork() {
+            snapshot.networkInterface = net.interface
+            snapshot.networkAddress = net.address
+            // Interface counters are 32-bit and wrap; skip a wrapped tick.
+            if let prev = previousNetBytes, now > prev.time,
+               net.rx >= prev.rx, net.tx >= prev.tx {
+                let dt = now - prev.time
+                let rate = SystemStatsSnapshot.IORate(
+                    read: Double(net.rx - prev.rx) / dt,
+                    write: Double(net.tx - prev.tx) / dt)
+                snapshot.networkIO = rate
+                Self.appendHistory(&networkInHistory, rate.read)
+                Self.appendHistory(&networkOutHistory, rate.write)
+            }
+            previousNetBytes = (net.rx, net.tx, now)
+        }
+
         // Volume capacity changes slowly; refresh it every 10 s.
         if cachedDisk == nil || now - diskReadAt >= 10 {
             cachedDisk = Self.readDiskUsage() ?? cachedDisk
@@ -220,6 +249,8 @@ final class SystemStatsSampler {
         snapshot.diskWriteHistory = diskWriteHistory
         snapshot.memoryInHistory = memoryInHistory
         snapshot.memoryOutHistory = memoryOutHistory
+        snapshot.networkInHistory = networkInHistory
+        snapshot.networkOutHistory = networkOutHistory
         return snapshot
     }
 
@@ -468,6 +499,48 @@ final class SystemStatsSampler {
             totalBytes: UInt64(total),
             freeBytes: UInt64(max(0, free))
         )
+    }
+
+    // MARK: - Network
+
+    /// Bytes received/sent summed over the physical "en*" interfaces (Wi-Fi,
+    /// Ethernet; skips loopback, VPN tunnels and AWDL so traffic isn't
+    /// double-counted), plus the first IPv4 address found on them.
+    nonisolated private static func readNetwork()
+        -> (rx: UInt64, tx: UInt64, interface: String?, address: String?)?
+    {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else { return nil }
+        defer { freeifaddrs(head) }
+
+        var rx: UInt64 = 0
+        var tx: UInt64 = 0
+        var found = false
+        var interface: String?
+        var address: String?
+        for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let ifa = ptr.pointee
+            guard let addr = ifa.ifa_addr else { continue }
+            let flags = Int32(ifa.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
+            let name = String(cString: ifa.ifa_name)
+            guard name.hasPrefix("en") else { continue }
+
+            if addr.pointee.sa_family == UInt8(AF_LINK),
+               let data = ifa.ifa_data?.assumingMemoryBound(to: if_data.self) {
+                rx &+= UInt64(data.pointee.ifi_ibytes)
+                tx &+= UInt64(data.pointee.ifi_obytes)
+                found = true
+            } else if addr.pointee.sa_family == UInt8(AF_INET), address == nil {
+                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                if getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count),
+                               nil, 0, NI_NUMERICHOST) == 0 {
+                    address = String(cString: host)
+                    interface = name
+                }
+            }
+        }
+        return found ? (rx, tx, interface, address) : nil
     }
 
     // MARK: - Misc readings
