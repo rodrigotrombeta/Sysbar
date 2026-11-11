@@ -45,6 +45,11 @@ final class AppModel: ObservableObject {
             })
     }
 
+    func moveMetric(_ metric: IconMetric, by offset: Int) {
+        Settings.move(metric, by: offset)
+        bump()
+    }
+
     func metricStyle(_ metric: IconMetric) -> Binding<IconStyle> {
         Binding(get: { Settings.style(for: metric) },
                 set: { Settings.setStyle($0, for: metric); self.bump() })

@@ -177,11 +177,32 @@ private struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("Menu bar icon", "Ícone na barra de menus"))
                 .font(.system(size: 12, weight: .bold))
-            ForEach(IconMetric.allCases) { metric in
+            Text(tr("Top to bottom = left to right. Use the arrows to reorder.",
+                    "De cima para baixo = da esquerda para a direita. Use as setas para reordenar."))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            let order = Settings.order
+            ForEach(Array(order.enumerated()), id: \.element) { index, metric in
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle(metric.title, isOn: model.metricShown(metric))
-                        .toggleStyle(.checkbox)
-                        .font(.system(size: 12, weight: .medium))
+                    HStack(spacing: 4) {
+                        Toggle(metric.title, isOn: model.metricShown(metric))
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 12, weight: .medium))
+                        Spacer(minLength: 4)
+                        Button { model.moveMetric(metric, by: -1) } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .disabled(index == 0)
+                        .help(tr("Move left in the menu bar", "Mover para a esquerda na barra de menus"))
+                        Button { model.moveMetric(metric, by: 1) } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .disabled(index == order.count - 1)
+                        .help(tr("Move right in the menu bar", "Mover para a direita na barra de menus"))
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
                     HStack(spacing: 6) {
                         Picker("", selection: model.metricStyle(metric)) {
                             ForEach(metric.styles) { Text($0.title).tag($0) }

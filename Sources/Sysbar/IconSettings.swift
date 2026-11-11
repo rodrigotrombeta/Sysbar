@@ -174,10 +174,33 @@ enum Settings {
         get {
             let raw = defaults.stringArray(forKey: "iconMetrics") ?? [IconMetric.cpu.rawValue]
             let parsed = raw.compactMap(IconMetric.init(rawValue:))
-            // Keep the canonical order regardless of toggle order.
-            return IconMetric.allCases.filter(parsed.contains)
+            // Shown in the user's chosen order, regardless of toggle order.
+            return order.filter(parsed.contains)
         }
         set { defaults.set(newValue.map(\.rawValue), forKey: "iconMetrics") }
+    }
+
+    /// Left-to-right order of every metric in the menu bar (shown or not).
+    static var order: [IconMetric] {
+        get {
+            let saved = (defaults.stringArray(forKey: "iconOrder") ?? [])
+                .compactMap(IconMetric.init(rawValue:))
+            var seen = Set<IconMetric>()
+            let unique = saved.filter { seen.insert($0).inserted }
+            return unique + IconMetric.allCases.filter { !seen.contains($0) }
+        }
+        set { defaults.set(newValue.map(\.rawValue), forKey: "iconOrder") }
+    }
+
+    /// Moves a metric one or more places left (negative) or right (positive).
+    static func move(_ metric: IconMetric, by offset: Int) {
+        var list = order
+        guard let from = list.firstIndex(of: metric) else { return }
+        let to = min(max(from + offset, 0), list.count - 1)
+        guard to != from else { return }
+        list.remove(at: from)
+        list.insert(metric, at: to)
+        order = list
     }
 
     /// Style per metric. Upgrades from the old global/per-chart keys.

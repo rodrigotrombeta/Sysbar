@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalClickMonitor: Any?
     private var keyMonitor: Any?
     private var modelObserver: AnyCancellable?
+    private var settingsObserver: AnyCancellable?
+    private var settingsGlobalMonitor: Any?
+    private var settingsLocalMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -45,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Re-fit panels whenever their content may have changed size.
         modelObserver = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.fitPanels() }
+        }
+
+        settingsObserver = model.$showSettings.removeDuplicates().sink { [weak self] shown in
+            DispatchQueue.main.async { self?.watchClicksOutsideSettings(shown) }
         }
 
         tick()
@@ -143,11 +150,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func closePopover() {
         popover.close()
+        model.showSettings = false
         details.closeUnpinned()
         if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         globalClickMonitor = nil
         keyMonitor = nil
+    }
+
+    // MARK: - Settings: leave on outside click
+
+    /// While Settings is showing, a click anywhere outside the main panels
+    /// (another app, the desktop, a detail panel) returns to the stats.
+    private func watchClicksOutsideSettings(_ shown: Bool) {
+        if let settingsGlobalMonitor { NSEvent.removeMonitor(settingsGlobalMonitor) }
+        if let settingsLocalMonitor { NSEvent.removeMonitor(settingsLocalMonitor) }
+        settingsGlobalMonitor = nil
+        settingsLocalMonitor = nil
+        guard shown else { return }
+        settingsGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.showSettings = false }
+        }
+        settingsLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self else { return event }
+            // Only Sysbar's own floating panels count; menus opened by the
+            // settings pickers must not close Settings.
+            if let window = event.window, window is KeyPanel,
+               window !== self.popover.panel.window, window !== self.edgePanel.panel.window {
+                self.model.showSettings = false
+            }
+            return event
+        }
     }
 
     // MARK: - Pin to screen edge
