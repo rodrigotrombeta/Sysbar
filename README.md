@@ -126,11 +126,11 @@ Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings ·
 > FPS, so those aren't shown. Processes owned by other users (e.g.
 > WindowServer) need admin rights and aren't listed.
 
-**Settings (⚙︎)** — changes apply instantly and the panel stays open:
+**Settings (⚙︎)** — changes apply instantly and the panel stays open; click anywhere outside the panel to go back to the stats:
 
 | Setting | Options |
 |---|---|
-| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. |
+| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. Use the ▲/▼ arrows to reorder them: top to bottom in the list = left to right in the menu bar. |
 | Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, I/O (page-ins/outs). Disk: pie, bar, percentage, I/O (read/write). Network: I/O chart (download/upload) or speed text. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
