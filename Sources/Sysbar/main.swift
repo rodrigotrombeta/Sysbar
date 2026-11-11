@@ -10,6 +10,13 @@ MainActor.assumeIsolated {
         exit(0)
     }
 
+    if let flag = args.firstIndex(of: "--demo-frames"), flag + 1 < args.count {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        DemoVideo.render(to: URL(fileURLWithPath: args[flag + 1]))
+        exit(0)
+    }
+
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate

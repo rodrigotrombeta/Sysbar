@@ -167,6 +167,7 @@ Sources/Sysbar/
   ProcessSampler.swift       top processes by memory / CPU (libproc)
   IconSettings.swift         icon metrics/style/color options (UserDefaults)
   UpdateChecker.swift        "Check for updates" via GitHub releases
+  DemoVideo.swift            `--demo-frames`: promo animation frames (scripts/demo-video.sh)
 scripts/make-icon.swift      generates Resources/AppIcon.icns
 scripts/release.sh           universal build + DMG/ZIP for GitHub releases
 build.sh                     build / install script
