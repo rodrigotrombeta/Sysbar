@@ -93,10 +93,14 @@ enum StatusIconRenderer {
             }
             switch chart {
             case .pie:
-                drawPie(value: value ?? 0, color: accent, frameColor: textColor,
+                drawPie(segments: segments(for: metric, snapshot: snapshot, value: value,
+                                           accent: accent, mode: config.colorMode),
+                        track: trackColor(config.colorMode),
                         rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
             case .bar:
-                drawBar(value: value ?? 0, color: accent, frameColor: textColor,
+                drawBar(segments: segments(for: metric, snapshot: snapshot, value: value,
+                                           accent: accent, mode: config.colorMode),
+                        track: trackColor(config.colorMode), frameColor: textColor,
                         rect: NSRect(x: x, y: 0, width: barWidth, height: height))
             case .io:
                 let io = metric.ioHistory(in: snapshot)
@@ -136,7 +140,7 @@ enum StatusIconRenderer {
                                  rect: NSRect(x: x - 2, y: 0, width: percentWidth, height: height))
             }
         case .barChart:
-            drawBar(value: value ?? 0, color: accent, frameColor: textColor,
+            drawBar(segments: [(value ?? 0, accent)], track: .clear, frameColor: textColor,
                     rect: NSRect(x: x, y: 0, width: barWidth, height: height))
         case .percent:
             break
@@ -209,45 +213,75 @@ enum StatusIconRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawBar(value: Double, color: NSColor, frameColor: NSColor, rect: NSRect) {
+    /// Fractions (0...1) and colors stacked in a pie or bar. Memory splits
+    /// into App / Wired / Compressed in the colored modes (iStat-style).
+    private static func segments(for metric: IconMetric, snapshot: SystemStatsSnapshot,
+                                 value: Double?, accent: NSColor,
+                                 mode: IconColorMode) -> [(Double, NSColor)] {
+        if metric == .memory, mode != .monochrome, snapshot.memory.totalBytes > 0 {
+            let m = snapshot.memory
+            let total = Double(m.totalBytes)
+            return [
+                (Double(m.appBytes) / total, MemoryPalette.app),
+                (Double(m.wiredBytes) / total, MemoryPalette.wired),
+                (Double(m.compressedBytes) / total, MemoryPalette.compressed),
+            ]
+        }
+        return [(value ?? 0, accent)]
+    }
+
+    private static func trackColor(_ mode: IconColorMode) -> NSColor {
+        mode == .monochrome ? NSColor.black.withAlphaComponent(0.3) : MemoryPalette.track
+    }
+
+    private static func drawBar(segments: [(Double, NSColor)], track: NSColor,
+                                frameColor: NSColor, rect: NSRect) {
         let frame = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.5, yRadius: 1.5)
         frameColor.withAlphaComponent(0.45).setStroke()
         frame.lineWidth = 0.75
         frame.stroke()
 
         let inner = rect.insetBy(dx: 1.5, dy: 1.5)
-        let fillHeight = inner.height * CGFloat(min(1, max(0, value)))
-        guard fillHeight > 0 else { return }
-        color.setFill()
-        NSBezierPath(rect: NSRect(x: inner.minX, y: inner.minY,
-                                  width: inner.width, height: fillHeight)).fill()
+        var y = inner.minY
+        for (fraction, color) in segments {
+            let h = inner.height * CGFloat(min(1, max(0, fraction)))
+            guard h > 0 else { continue }
+            color.setFill()
+            NSBezierPath(rect: NSRect(x: inner.minX, y: y, width: inner.width,
+                                      height: min(h, inner.maxY - y))).fill()
+            y += h
+            if y >= inner.maxY { break }
+        }
     }
 
-    /// Circle outline with a clockwise wedge from 12 o'clock.
-    private static func drawPie(value: Double, color: NSColor, frameColor: NSColor, rect: NSRect) {
-        let diameter = min(rect.width, rect.height) - 1
+    /// Solid disc (track color) with wedges filling to the edge, clockwise
+    /// from 12 o'clock — like iStat Menus' pie.
+    private static func drawPie(segments: [(Double, NSColor)], track: NSColor, rect: NSRect) {
+        let diameter = min(rect.width, rect.height)
         let circle = NSRect(x: rect.midX - diameter / 2, y: rect.midY - diameter / 2,
                             width: diameter, height: diameter)
-        let outline = NSBezierPath(ovalIn: circle)
-        frameColor.withAlphaComponent(0.45).setStroke()
-        outline.lineWidth = 0.75
-        outline.stroke()
+        track.setFill()
+        NSBezierPath(ovalIn: circle).fill()
 
-        let v = CGFloat(min(1, max(0, value)))
-        guard v > 0 else { return }
-        let inner = circle.insetBy(dx: 1.5, dy: 1.5)
-        let center = NSPoint(x: inner.midX, y: inner.midY)
-        let wedge = NSBezierPath()
-        if v >= 0.999 {
-            wedge.appendOval(in: inner)
-        } else {
-            wedge.move(to: center)
-            wedge.appendArc(withCenter: center, radius: inner.width / 2,
-                            startAngle: 90, endAngle: 90 - 360 * v, clockwise: true)
-            wedge.close()
+        let center = NSPoint(x: circle.midX, y: circle.midY)
+        let radius = diameter / 2
+        var start: CGFloat = 90
+        for (fraction, color) in segments {
+            let sweep = 360 * CGFloat(min(1, max(0, fraction)))
+            guard sweep > 0.1 else { continue }
+            let wedge = NSBezierPath()
+            if sweep >= 359.9 {
+                wedge.appendOval(in: circle)
+            } else {
+                wedge.move(to: center)
+                wedge.appendArc(withCenter: center, radius: radius,
+                                startAngle: start, endAngle: start - sweep, clockwise: true)
+                wedge.close()
+            }
+            color.setFill()
+            wedge.fill()
+            start -= sweep
         }
-        color.setFill()
-        wedge.fill()
     }
 
     /// Mirrored throughput chart: reads grow up from the midline, writes

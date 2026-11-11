@@ -40,7 +40,7 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return .systemGreen
         case .gpuMemory: return .systemCyan
         case .memory: return .systemPurple
-        case .disk: return .systemIndigo
+        case .disk: return .systemBlue
         }
     }
 
@@ -121,8 +121,8 @@ enum IconColorMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .monochrome: return tr("Monochrome", "Monocromático")
-        case .metric: return tr("Metric color", "Cor da métrica")
+        case .monochrome: return tr("Monochrome (white/black)", "Monocromático (branco/preto)")
+        case .metric: return tr("Colored", "Colorido")
         case .utilization: return tr("By utilization (green → red)", "Por utilização (verde → vermelho)")
         }
     }
@@ -158,7 +158,7 @@ enum Settings {
     }
 
     static var colorMode: IconColorMode {
-        get { defaults.string(forKey: "iconColorMode").flatMap(IconColorMode.init(rawValue:)) ?? .monochrome }
+        get { defaults.string(forKey: "iconColorMode").flatMap(IconColorMode.init(rawValue:)) ?? .metric }
         set { defaults.set(newValue.rawValue, forKey: "iconColorMode") }
     }
 
@@ -170,6 +170,12 @@ enum Settings {
     static var language: Language {
         get { defaults.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault }
         set { defaults.set(newValue.rawValue, forKey: "language") }
+    }
+
+    /// nil = not pinned.
+    static var pinSide: PinSide? {
+        get { defaults.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:)) }
+        set { defaults.set(newValue?.rawValue, forKey: "pinSide") }
     }
 
     static let intervals: [TimeInterval] = [0.5, 1, 2, 3, 5]

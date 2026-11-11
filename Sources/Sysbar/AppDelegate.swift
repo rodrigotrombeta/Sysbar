@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var menuIsOpen = false
+    private let pinned = PinnedPanelController()
 
     private let menu = NSMenu()
     private var statsHost: NSHostingView<SystemStatsPanelStack>!
@@ -30,6 +31,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildMenu()
         updateIcon()
         restartTimer()
+
+        pinned.onToggleSide = { [weak self] in
+            Settings.pinSide = Settings.pinSide == .left ? .right : .left
+            self?.applyPin()
+        }
+        pinned.onUnpin = { [weak self] in
+            Settings.pinSide = nil
+            self?.applyPin()
+        }
+        applyPin()
+    }
+
+    private func applyPin() {
+        if let side = Settings.pinSide {
+            pinned.show(snapshot: snapshot, interval: Settings.interval, side: side)
+        } else {
+            pinned.hide()
+        }
+        rebuildMenu()
     }
 
     // MARK: - Sampling
@@ -51,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateIcon()
         if menuIsOpen {
             statsHost.rootView = statsView()
+        }
+        if let side = Settings.pinSide {
+            pinned.update(snapshot: snapshot, interval: Settings.interval, side: side)
         }
     }
 
@@ -158,6 +181,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let pinMenu = NSMenu()
+        for side in PinSide.allCases {
+            pinMenu.addItem(menuItem(side.title, #selector(selectPin(_:)), side.rawValue,
+                                     on: Settings.pinSide == side))
+        }
+        pinMenu.addItem(.separator())
+        pinMenu.addItem(menuItem(tr("Unpin", "Desafixar"), #selector(selectPin(_:)), "none",
+                                 on: Settings.pinSide == nil))
+        let pinItem = NSMenuItem(title: tr("Pin to screen edge", "Fixar na lateral da tela"),
+                                 action: nil, keyEquivalent: "")
+        pinItem.image = NSImage(systemSymbolName: Settings.pinSide == nil ? "pin" : "pin.fill",
+                                accessibilityDescription: nil)
+        pinItem.submenu = pinMenu
+        menu.addItem(pinItem)
+
         menu.addItem(menuItem(tr("Open at login", "Abrir ao iniciar sessão"), #selector(toggleLogin(_:)),
                               nil, on: SMAppService.mainApp.status == .enabled))
         menu.addItem(menuItem(tr("Open Activity Monitor", "Abrir Monitor de Atividade"),
@@ -185,6 +223,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func settingsChanged() {
         rebuildMenu()
         updateIcon()
+        if let side = Settings.pinSide {
+            pinned.show(snapshot: snapshot, interval: Settings.interval, side: side)
+        }
     }
 
     // MARK: - Actions
@@ -213,6 +254,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Picking a chart implies you want to see it.
         if !Settings.metrics.contains(metric) { Settings.metrics = Settings.metrics + [metric] }
         settingsChanged()
+    }
+
+    @objc private func selectPin(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        Settings.pinSide = PinSide(rawValue: raw)
+        applyPin()
     }
 
     @objc private func selectLanguage(_ sender: NSMenuItem) {

@@ -128,9 +128,9 @@ struct MemoryStatsPanel: View {
 
     private let theme = StatsTheme()
 
-    private var wiredColor: Color { Color(nsColor: .systemBlue) }
-    private var activeColor: Color { Color(nsColor: .systemRed) }
-    private var compressedColor: Color { Color(nsColor: .systemPurple) }
+    private var appColor: Color { Color(nsColor: MemoryPalette.app) }
+    private var wiredColor: Color { Color(nsColor: MemoryPalette.wired) }
+    private var compressedColor: Color { Color(nsColor: MemoryPalette.compressed) }
 
     var body: some View {
         let memory = snapshot.memory
@@ -148,23 +148,25 @@ struct MemoryStatsPanel: View {
             SegmentedUsageBar(
                 total: memory.totalBytes,
                 segments: [
+                    (memory.appBytes, appColor),
                     (memory.wiredBytes, wiredColor),
-                    (memory.activeBytes, activeColor),
                     (memory.compressedBytes, compressedColor),
                 ]
             )
+            legendRow(color: appColor,
+                      label: tr("App", "Apps"),
+                      bytes: memory.appBytes)
             legendRow(color: wiredColor,
                       label: tr("Wired", "Fixa"),
                       bytes: memory.wiredBytes)
-            legendRow(color: activeColor,
-                      label: tr("Active", "Ativa"),
-                      bytes: memory.activeBytes)
             legendRow(color: compressedColor,
                       label: tr("Compressed", "Comprimida"),
                       bytes: memory.compressedBytes)
             legendRow(color: theme.textTertiary.opacity(0.4),
                       label: tr("Free", "Livre"),
                       bytes: memory.freeBytes)
+            StatsValueRow(label: "Swap",
+                          value: StatsFormat.gib(memory.swapUsedBytes) + " GB")
             StatsValueRow(
                 label: tr("Page in / out", "Paginação E/S"),
                 value: "\(SystemStatsSampler.formatRate(snapshot.memoryIO?.read)) · \(SystemStatsSampler.formatRate(snapshot.memoryIO?.write))"
@@ -198,7 +200,7 @@ struct DiskStatsPanel: View {
     let refreshInterval: TimeInterval
 
     private let theme = StatsTheme()
-    private var usageColor: Color { Color(nsColor: .systemIndigo) }
+    private var usageColor: Color { Color(nsColor: .systemBlue) }
     private var readColor: Color { Color(nsColor: .systemBlue) }
     private var writeColor: Color { Color(nsColor: .systemRed) }
 
