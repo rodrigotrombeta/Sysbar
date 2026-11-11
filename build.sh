@@ -13,6 +13,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Sysbar "$APP/Contents/MacOS/Sysbar"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Apache-2.0 §4(a): ship the license with every distributed copy.
+cp LICENSE "$APP/Contents/Resources/LICENSE"
 codesign --force --sign - "$APP" >/dev/null
 echo "Built $APP"
 
