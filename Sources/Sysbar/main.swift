@@ -23,7 +23,7 @@ enum Preview {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let sampler = SystemStatsSampler()
         var snapshot = sampler.sample()
-        for _ in 0..<12 {
+        for _ in 0..<16 {
             Thread.sleep(forTimeInterval: 0.25)
             snapshot = sampler.sample()
         }
@@ -42,6 +42,27 @@ enum Preview {
                          to: dir.appendingPathComponent("icon-\(style.rawValue)-\(mode.rawValue)-\(suffix).png"))
                 }
             }
+            // Memory + Disk with each of their own chart types.
+            let savedMem = Settings.memoryChart, savedDisk = Settings.diskChart
+            for chart in MetricChart.allCases {
+                Settings.memoryChart = chart
+                Settings.diskChart = chart
+                for mode in IconColorMode.allCases {
+                    let config = StatusIconRenderer.Config(
+                        metrics: [.cpu, .memory, .disk], style: .lineChart,
+                        colorMode: mode, showLabel: true)
+                    let icon = StatusIconRenderer.image(snapshot: snapshot, config: config,
+                                                        appearance: appearance)
+                    save(onBar: icon, appearance: appearance,
+                         to: dir.appendingPathComponent("memdisk-\(chart.rawValue)-\(mode.rawValue)-\(suffix).png"))
+                }
+            }
+            Settings.memoryChart = savedMem
+            Settings.diskChart = savedDisk
+
+            let savedLanguage = Settings.language
+            for language in Language.allCases {
+            Settings.language = language
             let renderer = ImageRenderer(content:
                 SystemStatsPanelStack(kinds: SystemStatKind.allCases, snapshot: snapshot,
                                       refreshInterval: 0.25)
@@ -52,9 +73,11 @@ enum Preview {
                 if let cg = renderer.cgImage {
                     let rep = NSBitmapImageRep(cgImage: cg)
                     try? rep.representation(using: .png, properties: [:])?
-                        .write(to: dir.appendingPathComponent("panel-\(suffix).png"))
+                        .write(to: dir.appendingPathComponent("panel-\(language.rawValue)-\(suffix).png"))
                 }
             }
+            }
+            Settings.language = savedLanguage
         }
     }
 

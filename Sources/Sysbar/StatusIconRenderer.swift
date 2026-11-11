@@ -10,6 +10,9 @@ enum StatusIconRenderer {
     private static let chartWidth: CGFloat = 32
     private static let barWidth: CGFloat = 7
     private static let percentWidth: CGFloat = 28
+    private static let pieWidth: CGFloat = 18
+    /// I/O charts never scale below this (bytes/s), so idle noise stays flat.
+    private static let ioFloor: Double = 256_000
     private static let gap: CGFloat = 2
     private static let widgetSpacing: CGFloat = 6
     /// Points shown in the menubar chart (the right-most part of the history).
@@ -27,7 +30,7 @@ enum StatusIconRenderer {
         config: Config,
         appearance: NSAppearance?
     ) -> NSImage {
-        let widths = config.metrics.map { _ in width(for: config) }
+        let widths = config.metrics.map { width(for: $0, config: config) }
         let total = widths.reduce(0, +) + widgetSpacing * CGFloat(max(0, widths.count - 1))
         let size = NSSize(width: ceil(total), height: height)
 
@@ -52,8 +55,15 @@ enum StatusIconRenderer {
 
     // MARK: - Layout
 
-    private static func width(for config: Config) -> CGFloat {
+    private static func width(for metric: IconMetric, config: Config) -> CGFloat {
         let label = config.showLabel ? labelWidth + gap : 0
+        if let chart = metric.chartKind {
+            switch chart {
+            case .pie: return label + pieWidth
+            case .bar: return label + barWidth
+            case .io: return label + chartWidth
+            }
+        }
         switch config.style {
         case .lineChart: return label + chartWidth
         case .barChart: return label + barWidth
@@ -74,6 +84,31 @@ enum StatusIconRenderer {
         let accent = color(for: metric, value: value, mode: config.colorMode)
         let textColor = config.colorMode == .monochrome ? NSColor.black : NSColor.labelColor
         var x = originX
+
+        if let chart = metric.chartKind {
+            if config.showLabel {
+                drawStackedLabel(metric.shortLabel, color: textColor,
+                                 rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
+                x += labelWidth + gap
+            }
+            switch chart {
+            case .pie:
+                drawPie(value: value ?? 0, color: accent, frameColor: textColor,
+                        rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
+            case .bar:
+                drawBar(value: value ?? 0, color: accent, frameColor: textColor,
+                        rect: NSRect(x: x, y: 0, width: barWidth, height: height))
+            case .io:
+                let io = metric.ioHistory(in: snapshot)
+                let mono = config.colorMode == .monochrome
+                drawIOChart(read: io.read, write: io.write,
+                            readColor: mono ? .black : .systemBlue,
+                            writeColor: mono ? .black : .systemRed,
+                            frameColor: textColor,
+                            rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
+            }
+            return
+        }
 
         if config.style == .percent {
             drawPercentBlock(
@@ -186,6 +221,86 @@ enum StatusIconRenderer {
         color.setFill()
         NSBezierPath(rect: NSRect(x: inner.minX, y: inner.minY,
                                   width: inner.width, height: fillHeight)).fill()
+    }
+
+    /// Circle outline with a clockwise wedge from 12 o'clock.
+    private static func drawPie(value: Double, color: NSColor, frameColor: NSColor, rect: NSRect) {
+        let diameter = min(rect.width, rect.height) - 1
+        let circle = NSRect(x: rect.midX - diameter / 2, y: rect.midY - diameter / 2,
+                            width: diameter, height: diameter)
+        let outline = NSBezierPath(ovalIn: circle)
+        frameColor.withAlphaComponent(0.45).setStroke()
+        outline.lineWidth = 0.75
+        outline.stroke()
+
+        let v = CGFloat(min(1, max(0, value)))
+        guard v > 0 else { return }
+        let inner = circle.insetBy(dx: 1.5, dy: 1.5)
+        let center = NSPoint(x: inner.midX, y: inner.midY)
+        let wedge = NSBezierPath()
+        if v >= 0.999 {
+            wedge.appendOval(in: inner)
+        } else {
+            wedge.move(to: center)
+            wedge.appendArc(withCenter: center, radius: inner.width / 2,
+                            startAngle: 90, endAngle: 90 - 360 * v, clockwise: true)
+            wedge.close()
+        }
+        color.setFill()
+        wedge.fill()
+    }
+
+    /// Mirrored throughput chart: reads grow up from the midline, writes
+    /// grow down, auto-scaled to the visible peak (like Stats' network chart).
+    private static func drawIOChart(read: [Double], write: [Double],
+                                    readColor: NSColor, writeColor: NSColor,
+                                    frameColor: NSColor, rect: NSRect) {
+        let frame = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 2, yRadius: 2)
+        frameColor.withAlphaComponent(0.45).setStroke()
+        frame.lineWidth = 0.75
+        frame.stroke()
+
+        let plot = rect.insetBy(dx: 1.5, dy: 1.5)
+        let mid = plot.midY
+        let midLine = NSBezierPath()
+        midLine.move(to: NSPoint(x: plot.minX, y: mid))
+        midLine.line(to: NSPoint(x: plot.maxX, y: mid))
+        frameColor.withAlphaComponent(0.25).setStroke()
+        midLine.lineWidth = 0.5
+        midLine.stroke()
+
+        let r = Array(read.suffix(chartPoints))
+        let w = Array(write.suffix(chartPoints))
+        let peak = max(ioFloor, r.max() ?? 0, w.max() ?? 0)
+        let half = plot.height / 2
+        let step = plot.width / CGFloat(chartPoints - 1)
+
+        func series(_ values: [Double], up: Bool, color: NSColor) {
+            guard values.count > 1 else { return }
+            let startX = plot.maxX - step * CGFloat(values.count - 1)
+            let line = NSBezierPath()
+            for (i, v) in values.enumerated() {
+                let h = half * CGFloat(min(1, v / peak))
+                let p = NSPoint(x: startX + step * CGFloat(i), y: up ? mid + h : mid - h)
+                i == 0 ? line.move(to: p) : line.line(to: p)
+            }
+            let area = line.copy() as! NSBezierPath
+            area.line(to: NSPoint(x: plot.maxX, y: mid))
+            area.line(to: NSPoint(x: startX, y: mid))
+            area.close()
+            color.withAlphaComponent(0.35).setFill()
+            area.fill()
+            color.setStroke()
+            line.lineWidth = 1
+            line.lineJoinStyle = .round
+            line.stroke()
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: plot).addClip()
+        series(r, up: true, color: readColor)
+        series(w, up: false, color: writeColor)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private static func drawPercentBlock(label: String?, value: Double?, color: NSColor, rect: NSRect) {
