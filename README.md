@@ -16,13 +16,35 @@ Available in **English** and **Portuguese**.
 - Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
   ~25 MB of RAM.
 
+## Download & install
+
+1. Download **`Sysbar-<version>.dmg`** from the
+   [latest release](https://github.com/rodrigotrombeta/Sysbar/releases/latest).
+2. Open it and drag **Sysbar** onto **Applications**.
+3. Open Sysbar from Applications. Its icon appears in the menu bar (there's no
+   Dock icon).
+
+**First launch:** Sysbar isn't signed with an Apple Developer ID or notarized,
+so macOS blocks it the first time ("Apple could not verify…"). To allow it once:
+
+- Open **System Settings → Privacy & Security**, scroll down and click
+  **Open Anyway** next to the Sysbar message, then confirm; **or**
+- in Terminal:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Sysbar.app
+  ```
+
+To update, download the new DMG and replace the app in Applications (quit
+Sysbar first).
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later, Apple Silicon recommended (E/P-core split).
 - Swift toolchain: Xcode **or** just the Command Line Tools
   (`xcode-select --install`).
 
-## Build & install
+## Build from source
 
 ```bash
 git clone https://github.com/rodrigotrombeta/Sysbar.git
@@ -49,6 +71,12 @@ quits the running Sysbar, replaces `/Applications/Sysbar.app` and relaunches:
 ```bash
 git pull            # if updating from GitHub
 ./build.sh install
+```
+
+To package a release (universal app, DMG and ZIP in `dist/`):
+
+```bash
+scripts/release.sh
 ```
 
 If you change the app icon drawing in `scripts/make-icon.swift`, regenerate the
@@ -138,6 +166,7 @@ Sources/Sysbar/
   ProcessSampler.swift       top processes by memory / CPU (libproc)
   IconSettings.swift         icon metrics/style/color options (UserDefaults)
 scripts/make-icon.swift      generates Resources/AppIcon.icns
+scripts/release.sh           universal build + DMG/ZIP for GitHub releases
 build.sh                     build / install script
 ```
 
