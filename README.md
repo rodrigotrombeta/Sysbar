@@ -135,6 +135,7 @@ Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings ·
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
 | General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Open at login (needs the app in `/Applications`). |
+| Updates | **Check for Updates…** asks GitHub for the latest release; if it is newer, Sysbar offers to download its DMG (install it like the first time). "Check for updates automatically" (on by default) does this once a day and stays silent when offline. The only network request Sysbar makes is to `api.github.com`. |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).
 
@@ -165,6 +166,7 @@ Sources/Sysbar/
   PanelWindows.swift         floating panels, hover tracking, detail placement
   ProcessSampler.swift       top processes by memory / CPU (libproc)
   IconSettings.swift         icon metrics/style/color options (UserDefaults)
+  UpdateChecker.swift        "Check for updates" via GitHub releases
 scripts/make-icon.swift      generates Resources/AppIcon.icns
 scripts/release.sh           universal build + DMG/ZIP for GitHub releases
 build.sh                     build / install script

@@ -265,6 +265,22 @@ enum Settings {
         set { defaults.set(newValue.rawValue, forKey: "language") }
     }
 
+    static var autoCheckUpdates: Bool {
+        get { defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "autoCheckUpdates") }
+    }
+
+    static var lastUpdateCheck: Date? {
+        get { defaults.object(forKey: "lastUpdateCheck") as? Date }
+        set { defaults.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
+    /// Version the user chose to skip in automatic update alerts.
+    static var skippedVersion: String? {
+        get { defaults.string(forKey: "skippedVersion") }
+        set { defaults.set(newValue, forKey: "skippedVersion") }
+    }
+
     /// nil = not pinned.
     static var pinSide: PinSide? {
         get { defaults.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:)) }
