@@ -21,15 +21,25 @@ enum StatusIconRenderer {
 
     struct Config {
         var metrics: [IconMetric]
-        var style: IconStyle
+        var styles: [IconMetric: IconStyle]
         var colorModes: [IconMetric: IconColorMode]
         var showLabel: Bool
 
+        func style(_ metric: IconMetric) -> IconStyle { styles[metric] ?? metric.styles[0] }
         func colorMode(_ metric: IconMetric) -> IconColorMode { colorModes[metric] ?? .metric }
 
         /// All-monochrome icons are template images (the system tints them);
         /// mixed icons draw their monochrome widgets in labelColor instead.
         var isTemplate: Bool { metrics.allSatisfy { colorMode($0) == .monochrome } }
+
+        static var current: Config {
+            Config(
+                metrics: Settings.metrics,
+                styles: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, Settings.style(for: $0)) }),
+                colorModes: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, Settings.colorMode(for: $0)) }),
+                showLabel: Settings.showLabel
+            )
+        }
     }
 
     static func image(
@@ -64,21 +74,13 @@ enum StatusIconRenderer {
 
     private static func width(for metric: IconMetric, config: Config) -> CGFloat {
         let label = config.showLabel ? labelWidth + gap : 0
-        if metric == .network {
-            return label + (Settings.networkStyle == .chart ? chartWidth : speedWidth)
-        }
-        if let chart = metric.chartKind {
-            switch chart {
-            case .pie: return label + pieWidth
-            case .bar: return label + barWidth
-            case .io: return label + chartWidth
-            }
-        }
-        switch config.style {
-        case .lineChart: return label + chartWidth
-        case .barChart: return label + barWidth
+        switch config.style(metric) {
+        case .line, .io: return label + chartWidth
+        case .bar: return label + barWidth
+        case .pie: return label + pieWidth
         case .percent: return percentWidth
-        case .lineAndPercent: return label + chartWidth + gap + percentWidth - 2
+        case .linePercent: return label + chartWidth + gap + percentWidth - 2
+        case .speed: return label + speedWidth
         }
     }
 
@@ -91,92 +93,59 @@ enum StatusIconRenderer {
         originX: CGFloat
     ) {
         let value = metric.value(in: snapshot)
+        let style = config.style(metric)
         let mode = config.colorMode(metric)
         let ink: NSColor = config.isTemplate ? .black : .labelColor
         let accent = color(for: metric, value: value, mode: mode, ink: ink)
-        let textColor = ink
         let mono = mode == .monochrome
         var x = originX
 
-        if metric == .network {
-            if config.showLabel {
-                drawStackedLabel(metric.shortLabel, color: textColor,
-                                 rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
-                x += labelWidth + gap
-            }
-            let io = metric.ioHistory(in: snapshot)
-            if Settings.networkStyle == .chart {
-                drawIOChart(read: io.read, write: io.write,
-                            readColor: mono ? ink : .systemBlue,
-                            writeColor: mono ? ink : .systemRed,
-                            frameColor: textColor,
-                            rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
-            } else {
-                drawSpeed(down: snapshot.networkIO?.read, up: snapshot.networkIO?.write,
-                          textColor: textColor,
-                          downColor: mono ? ink : .systemBlue,
-                          upColor: mono ? ink : .systemRed,
-                          rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
-            }
-            return
-        }
-
-        if let chart = metric.chartKind {
-            if config.showLabel {
-                drawStackedLabel(metric.shortLabel, color: textColor,
-                                 rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
-                x += labelWidth + gap
-            }
-            switch chart {
-            case .pie:
-                drawPie(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                           accent: accent, mode: mode),
-                        track: trackColor(mode, ink: ink),
-                        rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
-            case .bar:
-                drawBar(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                           accent: accent, mode: mode),
-                        track: trackColor(mode, ink: ink), frameColor: textColor,
-                        rect: NSRect(x: x, y: 0, width: barWidth, height: height))
-            case .io:
-                let io = metric.ioHistory(in: snapshot)
-                drawIOChart(read: io.read, write: io.write,
-                            readColor: mono ? ink : .systemBlue,
-                            writeColor: mono ? ink : .systemRed,
-                            frameColor: textColor,
-                            rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
-            }
-            return
-        }
-
-        if config.style == .percent {
-            drawPercentBlock(
-                label: config.showLabel ? metric.shortLabel : nil,
-                value: value, color: textColor,
-                rect: NSRect(x: x, y: 0, width: percentWidth, height: height)
-            )
+        if style == .percent {
+            drawPercentBlock(label: config.showLabel ? metric.shortLabel : nil,
+                             value: value, color: ink,
+                             rect: NSRect(x: x, y: 0, width: percentWidth, height: height))
             return
         }
 
         if config.showLabel {
-            drawStackedLabel(metric.shortLabel, color: textColor,
+            drawStackedLabel(metric.shortLabel, color: ink,
                              rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
             x += labelWidth + gap
         }
 
-        switch config.style {
-        case .lineChart, .lineAndPercent:
-            let rect = NSRect(x: x, y: 0, width: chartWidth, height: height)
+        switch style {
+        case .line, .linePercent:
             drawLineChart(values: metric.history(in: snapshot), color: accent,
-                          frameColor: textColor, rect: rect)
-            x += chartWidth + gap
-            if config.style == .lineAndPercent {
-                drawPercentBlock(label: nil, value: value, color: textColor,
-                                 rect: NSRect(x: x - 2, y: 0, width: percentWidth, height: height))
+                          frameColor: ink, rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
+            if style == .linePercent {
+                drawPercentBlock(label: nil, value: value, color: ink,
+                                 rect: NSRect(x: x + chartWidth + gap - 2, y: 0,
+                                              width: percentWidth, height: height))
             }
-        case .barChart:
-            drawBar(segments: [(value ?? 0, accent)], track: .clear, frameColor: textColor,
+        case .bar:
+            drawBar(segments: segments(for: metric, snapshot: snapshot, value: value,
+                                       accent: accent, mode: mode),
+                    track: metric == .memory || metric == .disk ? trackColor(mode, ink: ink) : .clear,
+                    frameColor: ink,
                     rect: NSRect(x: x, y: 0, width: barWidth, height: height))
+        case .pie:
+            drawPie(segments: segments(for: metric, snapshot: snapshot, value: value,
+                                       accent: accent, mode: mode),
+                    track: trackColor(mode, ink: ink),
+                    rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
+        case .io:
+            let io = metric.ioHistory(in: snapshot)
+            drawIOChart(read: io.read, write: io.write,
+                        readColor: mono ? ink : .systemBlue,
+                        writeColor: mono ? ink : .systemRed,
+                        frameColor: ink,
+                        rect: NSRect(x: x, y: 0, width: chartWidth, height: height))
+        case .speed:
+            drawSpeed(down: snapshot.networkIO?.read, up: snapshot.networkIO?.write,
+                      textColor: ink,
+                      downColor: mono ? ink : .systemBlue,
+                      upColor: mono ? ink : .systemRed,
+                      rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
         case .percent:
             break
         }

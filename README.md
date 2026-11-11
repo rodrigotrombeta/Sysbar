@@ -71,22 +71,42 @@ remove Sysbar under System Settings → General → Login Items).
 
 ## Using it
 
-Click the menu bar icon to see the CPU / GPU / Memory / Disk / Network panels. Below them:
+Click the menu bar icon to open the Sysbar panel. It stays open while you
+interact with it (click outside it, press Esc or click the icon again to close).
 
-| Menu | Options |
+**Header (always on top):** 📌 pin to the left/right screen edge (or unpin) ·
+Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings · quit.
+
+**Sections:** CPU · GPU · Memory · Disk · Network · Top memory (top 5 processes).
+
+- **Hover** a section to open its detailed metrics beside the panel.
+- **Click** a section to keep its details open (📌). Several can stay pinned at
+  once; they are placed side by side without overlapping. Click again, or the
+  ✕ in the detail panel, to close.
+
+| Details | Contents |
 |---|---|
-| **Icon metrics** | One or more of: CPU (total), CPU E-cores, CPU P-cores, GPU, GPU memory, **Memory**, **Disk**, **Network**. Each becomes its own mini widget that moves with usage. |
-| ↳ **Memory** | *Show in icon* + chart: **Pie chart** or **Bar** (in color, split into App green / Wired orange / Compressed magenta, iStat-style) or **I/O** (page-ins up / page-outs down). |
-| ↳ **Disk** | *Show in icon* + chart: **Pie chart** or **Bar** (startup volume used) or **I/O** (reads up / writes down). |
-| ↳ **Network** | *Show in icon* + **Chart** (download up / upload down) or **Speed** (two lines of text: ↑ upload, ↓ download). |
-| **Icon style** | For the CPU/GPU metrics: line chart, bar, percentage, or chart + percentage; toggle the small stacked label (CPU/GPU/RAM/SSD). |
-| **Colors** | Per metric: **Colored** (default), **Monochrome** (white/black, follows the menu bar), or **By utilization** (green → orange → red) — e.g. CPU colored, GPU monochrome, Memory colored, Disk monochrome. *All metrics* sets every metric at once. Pies fill to the edge over a grey track; I/O charts use blue (read/download) / red (write/upload). |
-| **Appearance** | **System**, **Light** or **Dark** for the menu and the pinned panel. |
-| **Refresh interval** | 0.5 s – 5 s. |
-| **Pin to screen edge** | Docks the stats panels in a floating window on the **left** or **right** edge of the screen, on top of other windows and on every Space. Its header has buttons for Activity Monitor, Appearance (System → Light → Dark), switching sides and unpinning. Remembered across launches. |
-| **Open Activity Monitor** | Opens macOS Activity Monitor (⌘A while the menu is open; also a button in the pinned panel). |
-| **Language** | English or Português — switches the whole app instantly. Defaults to your macOS language. |
-| **Open at login** | Launch at login (requires the app in `/Applications`). |
+| **CPU** | Chip and core layout (e.g. 6E + 4P), user / system / E-cores / P-cores, utilization history, load average, thermal state, uptime, top 5 processes by CPU, and a **Per core** dropdown with a chart for every core. |
+| **GPU** | GPU name and core count, GPU / renderer / tiler utilization and GPU memory, with a history chart for each, plus a **Per GPU** dropdown with a chart per GPU device. |
+| **Memory** | Used / total, memory pressure, App / Wired / Compressed / Swap, usage history, page-in/out history, top 10 processes by memory. |
+| **Disk** | Startup volume usage, read/write speed, totals since boot, read/write history. |
+| **Network** | Download / upload speed and peaks, interface, IP address, history. |
+| **Top processes** | Top 15 by memory and top 10 by CPU. |
+
+> macOS's public APIs report GPU utilization per GPU *device* (one on Apple
+> Silicon), not per GPU core, and don't expose Neural Engine (ANE) usage or
+> FPS, so those aren't shown. Processes owned by other users (e.g.
+> WindowServer) need admin rights and aren't listed.
+
+**Settings (⚙︎)** — changes apply instantly and the panel stays open:
+
+| Setting | Options |
+|---|---|
+| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. |
+| Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, I/O (page-ins/outs). Disk: pie, bar, percentage, I/O (read/write). Network: I/O chart (download/upload) or speed text. |
+| Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
+| Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
+| General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Open at login (needs the app in `/Applications`). |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).
 
@@ -104,13 +124,18 @@ panel, then exits.
 ```
 Sources/Sysbar/
   main.swift                 app entry point (+ --preview mode)
-  AppDelegate.swift          status item, menu, sampling timer, settings actions
+  AppDelegate.swift          status item, sampling timer, panel open/close, pin
   SystemStatsSampler.swift   CPU/GPU/memory/disk readings (adapted from oMLX)
   SystemStatsPanels.swift    CPU/GPU/Memory/Disk SwiftUI panels (adapted from oMLX)
   Localization.swift         English / Portuguese strings (tr("en", "pt"))
   StatsTheme.swift           colors/fonts + sparkline view
   StatusIconRenderer.swift   animated Stats-style menu bar icon
-  PinnedPanel.swift          floating panel pinned to the left/right screen edge
+  AppModel.swift             shared observable state for all panels
+  MainPanelView.swift        main panel: header, sections, settings
+  DetailViews.swift          hover/pinned detail panels (CPU, GPU, Memory, …)
+  Charts.swift               history charts, meters
+  PanelWindows.swift         floating panels, hover tracking, detail placement
+  ProcessSampler.swift       top processes by memory / CPU (libproc)
   IconSettings.swift         icon metrics/style/color options (UserDefaults)
 scripts/make-icon.swift      generates Resources/AppIcon.icns
 build.sh                     build / install script

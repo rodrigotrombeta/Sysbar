@@ -11,7 +11,7 @@
 
 import SwiftUI
 
-private let panelWidth: CGFloat = 270
+let panelWidth: CGFloat = 270
 
 // MARK: - CPU
 
@@ -327,6 +327,8 @@ struct SystemStatsPanelStack: View {
             DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         case .network:
             NetworkStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
+        case .processes:
+            EmptyView()
         }
     }
 }

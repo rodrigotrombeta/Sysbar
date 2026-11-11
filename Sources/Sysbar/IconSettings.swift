@@ -3,10 +3,11 @@
 import AppKit
 
 /// A metric that can drive (animate) the status-bar icon.
-enum IconMetric: String, CaseIterable {
+enum IconMetric: String, CaseIterable, Identifiable {
     case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network
 
-    /// Menu title.
+    var id: String { rawValue }
+
     var title: String {
         switch self {
         case .cpu: return tr("CPU (total)", "CPU (total)")
@@ -47,15 +48,17 @@ enum IconMetric: String, CaseIterable {
         }
     }
 
-    /// Memory and Disk pick their own chart (pie / bar / I/O); the other
-    /// metrics follow the global icon style.
-    var hasOwnChart: Bool { self == .memory || self == .disk || self == .network }
-
-    var chartKind: MetricChart? {
+    /// Styles that make sense for this metric, in menu order.
+    var styles: [IconStyle] {
         switch self {
-        case .memory: return Settings.memoryChart
-        case .disk: return Settings.diskChart
-        default: return nil
+        case .cpu, .eCores, .pCores, .gpu, .gpuMemory:
+            return [.line, .bar, .pie, .percent, .linePercent]
+        case .memory:
+            return [.pie, .bar, .line, .percent, .io]
+        case .disk:
+            return [.pie, .bar, .percent, .io]
+        case .network:
+            return [.io, .speed]
         }
     }
 
@@ -80,12 +83,11 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return s.gpuHistory
         case .gpuMemory: return s.gpuMemoryHistory
         case .memory: return s.memoryHistory
-        case .disk: return []
-        case .network: return []
+        case .disk, .network: return []
         }
     }
 
-    /// Read/write (or page-in/page-out) rate histories, bytes/s.
+    /// Read/write (or page-in/page-out, download/upload) rate histories, bytes/s.
     func ioHistory(in s: SystemStatsSnapshot) -> (read: [Double], write: [Double]) {
         switch self {
         case .memory: return (s.memoryInHistory, s.memoryOutHistory)
@@ -96,34 +98,44 @@ enum IconMetric: String, CaseIterable {
     }
 }
 
-/// Chart used by the Memory and Disk widgets.
-enum MetricChart: String, CaseIterable {
-    case pie, bar, io
+/// How one metric is drawn in the menu bar.
+enum IconStyle: String, CaseIterable, Identifiable {
+    case line, bar, pie, percent, linePercent, io, speed
+
+    var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .pie: return tr("Pie chart", "Gráfico de pizza")
+        case .line: return tr("Line chart", "Gráfico de linha")
         case .bar: return tr("Bar", "Barra")
-        case .io: return tr("I/O (read / write)", "I/O (leitura / escrita)")
-        }
-    }
-}
-
-/// Widget used by the Network metric.
-enum NetworkStyle: String, CaseIterable {
-    case chart, speed
-
-    var title: String {
-        switch self {
-        case .chart: return tr("Chart (download / upload)", "Gráfico (download / upload)")
+        case .pie: return tr("Pie chart", "Gráfico de pizza")
+        case .percent: return tr("Percentage", "Porcentagem")
+        case .linePercent: return tr("Chart + %", "Gráfico + %")
+        case .io: return tr("I/O chart", "Gráfico de I/O")
         case .speed: return tr("Speed (text)", "Velocidade (texto)")
         }
     }
 }
 
-/// Appearance of the menu and the pinned panel.
-enum AppAppearance: String, CaseIterable {
+enum IconColorMode: String, CaseIterable, Identifiable {
+    case monochrome, metric, utilization
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .monochrome: return tr("Monochrome", "Monocromático")
+        case .metric: return tr("Colored", "Colorido")
+        case .utilization: return tr("By utilization", "Por utilização")
+        }
+    }
+}
+
+/// Appearance of the panels.
+enum AppAppearance: String, CaseIterable, Identifiable {
     case system, light, dark
+
+    var id: String { rawValue }
 
     var title: String {
         switch self {
@@ -155,31 +167,6 @@ enum AppAppearance: String, CaseIterable {
     }
 }
 
-enum IconStyle: String, CaseIterable {
-    case lineChart, barChart, percent, lineAndPercent
-
-    var title: String {
-        switch self {
-        case .lineChart: return tr("Line chart", "Gráfico de linha")
-        case .barChart: return tr("Bar", "Barra")
-        case .percent: return tr("Percentage", "Porcentagem")
-        case .lineAndPercent: return tr("Chart + percentage", "Gráfico + porcentagem")
-        }
-    }
-}
-
-enum IconColorMode: String, CaseIterable {
-    case monochrome, metric, utilization
-
-    var title: String {
-        switch self {
-        case .monochrome: return tr("Monochrome (white/black)", "Monocromático (branco/preto)")
-        case .metric: return tr("Colored", "Colorido")
-        case .utilization: return tr("By utilization (green → red)", "Por utilização (verde → vermelho)")
-        }
-    }
-}
-
 enum Settings {
     private static let defaults = UserDefaults.standard
 
@@ -188,30 +175,42 @@ enum Settings {
             let raw = defaults.stringArray(forKey: "iconMetrics") ?? [IconMetric.cpu.rawValue]
             let parsed = raw.compactMap(IconMetric.init(rawValue:))
             // Keep the canonical order regardless of toggle order.
-            let ordered = IconMetric.allCases.filter(parsed.contains)
-            return ordered.isEmpty ? [.cpu] : ordered
+            return IconMetric.allCases.filter(parsed.contains)
         }
         set { defaults.set(newValue.map(\.rawValue), forKey: "iconMetrics") }
     }
 
-    static var style: IconStyle {
-        get { defaults.string(forKey: "iconStyle").flatMap(IconStyle.init(rawValue:)) ?? .lineChart }
-        set { defaults.set(newValue.rawValue, forKey: "iconStyle") }
+    /// Style per metric. Upgrades from the old global/per-chart keys.
+    static func style(for metric: IconMetric) -> IconStyle {
+        let map = defaults.dictionary(forKey: "iconStyles") as? [String: String] ?? [:]
+        if let raw = map[metric.rawValue], let style = IconStyle(rawValue: raw),
+           metric.styles.contains(style) {
+            return style
+        }
+        let legacy: IconStyle?
+        switch metric {
+        case .memory:
+            legacy = defaults.string(forKey: "memoryChart").flatMap(IconStyle.init(rawValue:))
+        case .disk:
+            legacy = defaults.string(forKey: "diskChart").flatMap(IconStyle.init(rawValue:))
+        case .network:
+            legacy = defaults.string(forKey: "networkStyle") == "speed" ? .speed : nil
+        default:
+            switch defaults.string(forKey: "iconStyle") {
+            case "barChart": legacy = .bar
+            case "percent": legacy = .percent
+            case "lineAndPercent": legacy = .linePercent
+            default: legacy = nil
+            }
+        }
+        if let legacy, metric.styles.contains(legacy) { return legacy }
+        return metric.styles[0]
     }
 
-    static var memoryChart: MetricChart {
-        get { defaults.string(forKey: "memoryChart").flatMap(MetricChart.init(rawValue:)) ?? .bar }
-        set { defaults.set(newValue.rawValue, forKey: "memoryChart") }
-    }
-
-    static var diskChart: MetricChart {
-        get { defaults.string(forKey: "diskChart").flatMap(MetricChart.init(rawValue:)) ?? .pie }
-        set { defaults.set(newValue.rawValue, forKey: "diskChart") }
-    }
-
-    static var networkStyle: NetworkStyle {
-        get { defaults.string(forKey: "networkStyle").flatMap(NetworkStyle.init(rawValue:)) ?? .chart }
-        set { defaults.set(newValue.rawValue, forKey: "networkStyle") }
+    static func setStyle(_ style: IconStyle, for metric: IconMetric) {
+        var map = defaults.dictionary(forKey: "iconStyles") as? [String: String] ?? [:]
+        map[metric.rawValue] = style.rawValue
+        defaults.set(map, forKey: "iconStyles")
     }
 
     /// Color mode per metric (default: colored). Falls back to the old
@@ -228,14 +227,14 @@ enum Settings {
         defaults.set(map, forKey: "iconColorModes")
     }
 
-    static var appearance: AppAppearance {
-        get { defaults.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system }
-        set { defaults.set(newValue.rawValue, forKey: "appAppearance") }
-    }
-
     static var showLabel: Bool {
         get { defaults.object(forKey: "iconShowLabel") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "iconShowLabel") }
+    }
+
+    static var appearance: AppAppearance {
+        get { defaults.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system }
+        set { defaults.set(newValue.rawValue, forKey: "appAppearance") }
     }
 
     static var language: Language {
