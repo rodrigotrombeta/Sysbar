@@ -250,6 +250,18 @@ private struct SettingsView: View {
             }
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)
+
+            Divider()
+            Text(tr("Updates", "Atualizações")).font(.system(size: 12, weight: .bold))
+            Toggle(tr("Check for updates automatically", "Verificar atualizações automaticamente"),
+                   isOn: model.autoCheckUpdates)
+                .toggleStyle(.checkbox)
+            HStack {
+                Text(tr("Version ", "Versão ") + UpdateChecker.currentVersion)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(tr("Check for Updates…", "Verificar atualizações…")) { model.checkForUpdates() }
+            }
         }
         .font(.system(size: 12))
         .controlSize(.small)

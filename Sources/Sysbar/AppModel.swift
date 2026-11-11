@@ -23,6 +23,7 @@ final class AppModel: ObservableObject {
     var pin: (PinSide?) -> Void = { _ in }
     var openActivityMonitor: () -> Void = {}
     var quit: () -> Void = {}
+    var checkForUpdates: () -> Void = {}
     var toggleDetailPin: (SystemStatKind) -> Void = { _ in }
     var closeDetail: (SystemStatKind) -> Void = { _ in }
 
@@ -74,6 +75,11 @@ final class AppModel: ObservableObject {
 
     var appearance: Binding<AppAppearance> {
         Binding(get: { Settings.appearance }, set: { Settings.appearance = $0; self.bump() })
+    }
+
+    var autoCheckUpdates: Binding<Bool> {
+        Binding(get: { Settings.autoCheckUpdates },
+                set: { Settings.autoCheckUpdates = $0; self.revision &+= 1 })
     }
 
     func cycleAppearance() {

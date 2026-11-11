@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sampler = SystemStatsSampler()
     private let processSampler = ProcessSampler()
     private let model = AppModel()
+    private let updater = UpdateChecker()
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var lastInterval: TimeInterval = 0
@@ -45,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.pin = { [weak self] side in self?.pin(side) }
         model.openActivityMonitor = { [weak self] in self?.openActivityMonitor() }
         model.quit = { NSApp.terminate(nil) }
+        model.checkForUpdates = { [weak self] in
+            self?.closePopover()
+            self?.updater.check(userInitiated: true)
+        }
         // Re-fit panels whenever their content may have changed size.
         modelObserver = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.fitPanels() }
@@ -56,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tick()
         restartTimer()
+        updater.startAutomaticChecks()
         if Settings.pinSide != nil { edgePanel.show() }
 
         NotificationCenter.default.addObserver(
