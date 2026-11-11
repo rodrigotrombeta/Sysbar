@@ -174,5 +174,7 @@ build.sh                     build / install script
 
 `SystemStatsSampler.swift`, `SystemStatsPanels.swift` and the sparkline view
 are adapted from [oMLX](https://github.com/jundot/omlx) by jundot, licensed
-under the Apache License 2.0 (see `LICENSE`). The menu bar icon design is
+under the Apache License 2.0 (see `LICENSE`). A copy of the license ships in
+every build and package (`Sysbar.app/Contents/Resources/LICENSE`, plus
+`LICENSE.txt` in the DMG). The menu bar icon design is
 inspired by [Stats](https://github.com/exelban/stats) (no code copied).
