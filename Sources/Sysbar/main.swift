@@ -35,7 +35,7 @@ enum Preview {
                 for mode in IconColorMode.allCases {
                     let config = StatusIconRenderer.Config(
                         metrics: [.cpu, .gpu, .memory], style: style,
-                        colorMode: mode, showLabel: true)
+                        colorModes: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, mode) }), showLabel: true)
                     let icon = StatusIconRenderer.image(snapshot: snapshot, config: config,
                                                         appearance: appearance)
                     save(onBar: icon, appearance: appearance,
@@ -49,14 +49,31 @@ enum Preview {
                 Settings.diskChart = chart
                 for mode in IconColorMode.allCases {
                     let config = StatusIconRenderer.Config(
-                        metrics: [.cpu, .memory, .disk], style: .lineChart,
-                        colorMode: mode, showLabel: true)
+                        metrics: [.cpu, .memory, .disk, .network], style: .lineChart,
+                        colorModes: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, mode) }), showLabel: true)
                     let icon = StatusIconRenderer.image(snapshot: snapshot, config: config,
                                                         appearance: appearance)
                     save(onBar: icon, appearance: appearance,
                          to: dir.appendingPathComponent("memdisk-\(chart.rawValue)-\(mode.rawValue)-\(suffix).png"))
                 }
             }
+            // Mixed per-metric colors (the README example) and network speed text.
+            let savedNet = Settings.networkStyle
+            for netStyle in NetworkStyle.allCases {
+                Settings.networkStyle = netStyle
+                Settings.memoryChart = .pie
+                Settings.diskChart = .pie
+                let mixed = StatusIconRenderer.Config(
+                    metrics: [.cpu, .gpu, .memory, .disk, .network], style: .lineChart,
+                    colorModes: [.cpu: .metric, .gpu: .monochrome, .memory: .metric,
+                                 .disk: .monochrome, .network: .metric],
+                    showLabel: true)
+                save(onBar: StatusIconRenderer.image(snapshot: snapshot, config: mixed,
+                                                     appearance: appearance),
+                     appearance: appearance,
+                     to: dir.appendingPathComponent("mixed-\(netStyle.rawValue)-\(suffix).png"))
+            }
+            Settings.networkStyle = savedNet
             Settings.memoryChart = savedMem
             Settings.diskChart = savedDisk
 

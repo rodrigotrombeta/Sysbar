@@ -4,15 +4,17 @@
 
 A tiny macOS menu bar app that shows the **System Stats** panel from
 [oMLX](https://github.com/jundot/omlx) — CPU E/P-core usage, thermal state,
-load average, uptime, GPU usage, GPU memory and a memory breakdown — plus a
-Disk panel (usage, read/write speed), behind an animated,
+load average, uptime, GPU usage, GPU memory and a memory breakdown — plus
+Disk (usage, read/write speed) and Network (download/upload, interface, IP)
+panels, behind an animated,
 [Stats](https://github.com/exelban/stats)-style menu bar icon.
 Available in **English** and **Portuguese**.
 
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
 - Public APIs only (Mach host statistics, IOKit accelerator and block-storage
   stats, `vm_statistics64`) — no `sudo`, no helper tools.
-- Runs as a menu bar–only app (no Dock icon).
+- Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
+  ~25 MB of RAM.
 
 ## Requirements
 
@@ -69,17 +71,20 @@ remove Sysbar under System Settings → General → Login Items).
 
 ## Using it
 
-Click the menu bar icon to see the CPU / GPU / Memory / Disk panels. Below them:
+Click the menu bar icon to see the CPU / GPU / Memory / Disk / Network panels. Below them:
 
 | Menu | Options |
 |---|---|
-| **Icon metrics** | One or more of: CPU (total), CPU E-cores, CPU P-cores, GPU, GPU memory, **Memory**, **Disk**. Each becomes its own mini widget that moves with usage. |
+| **Icon metrics** | One or more of: CPU (total), CPU E-cores, CPU P-cores, GPU, GPU memory, **Memory**, **Disk**, **Network**. Each becomes its own mini widget that moves with usage. |
 | ↳ **Memory** | *Show in icon* + chart: **Pie chart** or **Bar** (in color, split into App green / Wired orange / Compressed magenta, iStat-style) or **I/O** (page-ins up / page-outs down). |
 | ↳ **Disk** | *Show in icon* + chart: **Pie chart** or **Bar** (startup volume used) or **I/O** (reads up / writes down). |
+| ↳ **Network** | *Show in icon* + **Chart** (download up / upload down) or **Speed** (two lines of text: ↑ upload, ↓ download). |
 | **Icon style** | For the CPU/GPU metrics: line chart, bar, percentage, or chart + percentage; toggle the small stacked label (CPU/GPU/RAM/SSD). |
-| **Colors** | **Colored** (default), **Monochrome** (white/black, follows the menu bar theme), or **By utilization** (green → orange → red). Pies fill to the edge over a grey track. I/O charts use blue (read) / red (write). |
+| **Colors** | Per metric: **Colored** (default), **Monochrome** (white/black, follows the menu bar), or **By utilization** (green → orange → red) — e.g. CPU colored, GPU monochrome, Memory colored, Disk monochrome. *All metrics* sets every metric at once. Pies fill to the edge over a grey track; I/O charts use blue (read/download) / red (write/upload). |
+| **Appearance** | **System**, **Light** or **Dark** for the menu and the pinned panel. |
 | **Refresh interval** | 0.5 s – 5 s. |
-| **Pin to screen edge** | Docks the stats panels in a floating window on the **left** or **right** edge of the screen, on top of other windows and on every Space. The window's header has buttons to switch sides and to unpin. Remembered across launches. |
+| **Pin to screen edge** | Docks the stats panels in a floating window on the **left** or **right** edge of the screen, on top of other windows and on every Space. Its header has buttons for Activity Monitor, Appearance (System → Light → Dark), switching sides and unpinning. Remembered across launches. |
+| **Open Activity Monitor** | Opens macOS Activity Monitor (⌘A while the menu is open; also a button in the pinned panel). |
 | **Language** | English or Português — switches the whole app instantly. Defaults to your macOS language. |
 | **Open at login** | Launch at login (requires the app in `/Applications`). |
 
