@@ -22,79 +22,80 @@ enum Preview {
     static func write(to dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let sampler = SystemStatsSampler()
-        var snapshot = sampler.sample()
+        let processes = ProcessSampler()
+        let model = AppModel()
+        _ = processes.sample()
         for _ in 0..<16 {
             Thread.sleep(forTimeInterval: 0.25)
-            snapshot = sampler.sample()
+            model.snapshot = sampler.sample()
+        }
+        model.processes = processes.sample()
+        model.expandedCores = true
+        model.expandedGPUs = true
+        let snapshot = model.snapshot
+
+        func config(_ metrics: [IconMetric], _ style: (IconMetric) -> IconStyle,
+                    _ color: (IconMetric) -> IconColorMode) -> StatusIconRenderer.Config {
+            StatusIconRenderer.Config(
+                metrics: metrics,
+                styles: Dictionary(uniqueKeysWithValues: metrics.map { ($0, style($0)) }),
+                colorModes: Dictionary(uniqueKeysWithValues: metrics.map { ($0, color($0)) }),
+                showLabel: true)
         }
 
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua] {
             let appearance = NSAppearance(named: appearanceName)!
             let suffix = appearanceName == .aqua ? "light" : "dark"
-            for style in IconStyle.allCases {
-                for mode in IconColorMode.allCases {
-                    let config = StatusIconRenderer.Config(
-                        metrics: [.cpu, .gpu, .memory], style: style,
-                        colorModes: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, mode) }), showLabel: true)
-                    let icon = StatusIconRenderer.image(snapshot: snapshot, config: config,
-                                                        appearance: appearance)
+            // Every style of every metric, colored.
+            for metric in IconMetric.allCases {
+                for style in metric.styles {
+                    let icon = StatusIconRenderer.image(
+                        snapshot: snapshot, config: config([metric], { _ in style }, { _ in .metric }),
+                        appearance: appearance)
                     save(onBar: icon, appearance: appearance,
-                         to: dir.appendingPathComponent("icon-\(style.rawValue)-\(mode.rawValue)-\(suffix).png"))
+                         to: dir.appendingPathComponent("icon-\(metric.rawValue)-\(style.rawValue)-\(suffix).png"))
                 }
             }
-            // Memory + Disk with each of their own chart types.
-            let savedMem = Settings.memoryChart, savedDisk = Settings.diskChart
-            for chart in MetricChart.allCases {
-                Settings.memoryChart = chart
-                Settings.diskChart = chart
-                for mode in IconColorMode.allCases {
-                    let config = StatusIconRenderer.Config(
-                        metrics: [.cpu, .memory, .disk, .network], style: .lineChart,
-                        colorModes: Dictionary(uniqueKeysWithValues: IconMetric.allCases.map { ($0, mode) }), showLabel: true)
-                    let icon = StatusIconRenderer.image(snapshot: snapshot, config: config,
-                                                        appearance: appearance)
-                    save(onBar: icon, appearance: appearance,
-                         to: dir.appendingPathComponent("memdisk-\(chart.rawValue)-\(mode.rawValue)-\(suffix).png"))
-                }
-            }
-            // Mixed per-metric colors (the README example) and network speed text.
-            let savedNet = Settings.networkStyle
-            for netStyle in NetworkStyle.allCases {
-                Settings.networkStyle = netStyle
-                Settings.memoryChart = .pie
-                Settings.diskChart = .pie
-                let mixed = StatusIconRenderer.Config(
-                    metrics: [.cpu, .gpu, .memory, .disk, .network], style: .lineChart,
-                    colorModes: [.cpu: .metric, .gpu: .monochrome, .memory: .metric,
-                                 .disk: .monochrome, .network: .metric],
-                    showLabel: true)
-                save(onBar: StatusIconRenderer.image(snapshot: snapshot, config: mixed,
-                                                     appearance: appearance),
-                     appearance: appearance,
-                     to: dir.appendingPathComponent("mixed-\(netStyle.rawValue)-\(suffix).png"))
-            }
-            Settings.networkStyle = savedNet
-            Settings.memoryChart = savedMem
-            Settings.diskChart = savedDisk
+            // Mixed per-metric colors (CPU colored, GPU mono, Memory colored, Disk mono).
+            let mixed = config([.cpu, .gpu, .memory, .disk, .network],
+                               { $0 == .memory || $0 == .disk ? .pie : $0.styles[0] },
+                               { $0 == .gpu || $0 == .disk ? .monochrome : .metric })
+            save(onBar: StatusIconRenderer.image(snapshot: snapshot, config: mixed, appearance: appearance),
+                 appearance: appearance, to: dir.appendingPathComponent("mixed-\(suffix).png"))
 
+            let scheme: ColorScheme = appearanceName == .aqua ? .light : .dark
             let savedLanguage = Settings.language
             for language in Language.allCases {
-            Settings.language = language
-            let renderer = ImageRenderer(content:
-                SystemStatsPanelStack(kinds: SystemStatKind.allCases, snapshot: snapshot,
-                                      refreshInterval: 0.25)
-                    .background(Color(nsColor: .windowBackgroundColor))
-                    .environment(\.colorScheme, appearanceName == .aqua ? .light : .dark))
-            renderer.scale = 2
-            appearance.performAsCurrentDrawingAppearance {
-                if let cg = renderer.cgImage {
-                    let rep = NSBitmapImageRep(cgImage: cg)
-                    try? rep.representation(using: .png, properties: [:])?
-                        .write(to: dir.appendingPathComponent("panel-\(language.rawValue)-\(suffix).png"))
+                Settings.language = language
+                let sections = VStack(spacing: 0) {
+                    CPUStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
+                    GPUStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
+                    MemoryStatsPanel(snapshot: snapshot)
+                    DiskStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
+                    NetworkStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
+                    TopProcessesPanel(rows: Array(model.processes.topMemory.prefix(5)),
+                                      total: snapshot.memory.totalBytes)
+                }
+                render(sections, scheme: scheme, appearance: appearance,
+                       to: dir.appendingPathComponent("panel-\(language.rawValue)-\(suffix).png"))
+                for kind in SystemStatKind.allCases {
+                    render(DetailContainer(model: model, kind: kind), scheme: scheme, appearance: appearance,
+                           to: dir.appendingPathComponent("detail-\(kind.rawValue)-\(language.rawValue)-\(suffix).png"))
                 }
             }
-            }
             Settings.language = savedLanguage
+        }
+    }
+
+    private static func render<V: View>(_ view: V, scheme: ColorScheme, appearance: NSAppearance, to url: URL) {
+        let renderer = ImageRenderer(content: view
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, scheme))
+        renderer.scale = 2
+        appearance.performAsCurrentDrawingAppearance {
+            if let cg = renderer.cgImage {
+                try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?.write(to: url)
+            }
         }
     }
 

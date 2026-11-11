@@ -28,6 +28,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case memory
     case disk
     case network
+    case processes
 
     var tag: String {
         switch self {
@@ -36,6 +37,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
         case .memory: return "MEM"
         case .disk: return "DISK"
         case .network: return "NET"
+        case .processes: return "TOP"
         }
     }
 }
@@ -49,6 +51,7 @@ struct SystemStatsSnapshot: Sendable {
         /// active + inactive + speculative − purgeable − file-backed.
         var appBytes: UInt64 = 0
         var swapUsedBytes: UInt64 = 0
+        var swapTotalBytes: UInt64 = 0
         var compressedBytes: UInt64 = 0
         /// Derived as total − (wired + active + compressed) so the four
         /// legend rows always sum to the machine total.
@@ -107,6 +110,35 @@ struct SystemStatsSnapshot: Sendable {
     var memoryInHistory: [Double] = []
     var memoryOutHistory: [Double] = []
 
+    // Details (hover panels).
+    var cpuName: String = ""
+    var eCoreCount = 0
+    var cpuUser: Double?
+    var cpuSystem: Double?
+    /// Per logical CPU (E cluster first), 0...1, and their histories.
+    var coreUsage: [Double] = []
+    var coreHistory: [[Double]] = []
+    var gpuDevices: [GPUDevice] = []
+    var gpuRendererHistory: [Double] = []
+    var gpuTilerHistory: [Double] = []
+    /// One utilization history per GPU device.
+    var gpuDeviceHistory: [[Double]] = []
+    /// kern.memorystatus_vm_pressure_level: 1 normal, 2 warning, 4 critical.
+    var memoryPressure: Int = 1
+    var swapTotalBytes: UInt64 = 0
+    var diskTotalRead: UInt64 = 0
+    var diskTotalWritten: UInt64 = 0
+
+    struct GPUDevice: Sendable {
+        var name: String
+        var cores: Int
+        var usage: Double?
+        var renderer: Double?
+        var tiler: Double?
+        var inUseBytes: UInt64?
+        var allocatedBytes: UInt64?
+    }
+
     /// Network throughput: read = download, write = upload (bytes/s).
     var networkIO: IORate?
     var networkInHistory: [Double] = []
@@ -127,7 +159,15 @@ final class SystemStatsSampler {
     struct CPUTicks: Equatable, Sendable {
         var busy: UInt64
         var total: UInt64
+        var user: UInt64 = 0
+        var system: UInt64 = 0
     }
+
+    private var coreHistory: [[Double]] = []
+    private var gpuRendererHistory: [Double] = []
+    private var gpuTilerHistory: [Double] = []
+    private var gpuDeviceHistory: [[Double]] = []
+    private let cpuName = SystemStatsSampler.readCPUName()
 
     private var previousTicks: [CPUTicks]?
     private var eHistory: [Double] = []
@@ -152,7 +192,31 @@ final class SystemStatsSampler {
     func sample() -> SystemStatsSnapshot {
         var snapshot = SystemStatsSnapshot()
 
+        snapshot.cpuName = cpuName
+        snapshot.eCoreCount = eCoreCount
         if let ticks = Self.readCPUTicks() {
+            if let previous = previousTicks, previous.count == ticks.count {
+                var cores: [Double] = []
+                var user = 0.0, system = 0.0, total = 0.0
+                for i in ticks.indices {
+                    let p = previous[i], c = ticks[i]
+                    guard c.total > p.total, c.busy >= p.busy else { cores.append(0); continue }
+                    let t = Double(c.total - p.total)
+                    cores.append(min(1, Double(c.busy - p.busy) / t))
+                    if c.user >= p.user { user += Double(c.user - p.user) }
+                    if c.system >= p.system { system += Double(c.system - p.system) }
+                    total += t
+                }
+                snapshot.coreUsage = cores
+                if total > 0 {
+                    snapshot.cpuUser = min(1, user / total)
+                    snapshot.cpuSystem = min(1, system / total)
+                }
+                if coreHistory.count != cores.count {
+                    coreHistory = Array(repeating: [], count: cores.count)
+                }
+                for i in cores.indices { Self.appendHistory(&coreHistory[i], cores[i]) }
+            }
             if let previous = previousTicks,
                let usage = Self.clusterUsage(
                    previous: previous, current: ticks, eCoreCount: eCoreCount
@@ -167,12 +231,30 @@ final class SystemStatsSampler {
             previousTicks = ticks
         }
 
-        if let gpu = Self.readGPUStatistics() {
+        let devices = Self.readGPUDevices()
+        snapshot.gpuDevices = devices
+        if let gpu = devices.first {
             snapshot.gpuUsage = gpu.usage
-            snapshot.gpuMemoryInUseBytes = gpu.memoryInUseBytes
-            if let usage = gpu.usage {
-                Self.appendHistory(&gpuHistory, usage)
-            }
+            snapshot.gpuMemoryInUseBytes = gpu.inUseBytes
+            if let usage = gpu.usage { Self.appendHistory(&gpuHistory, usage) }
+            if let v = gpu.renderer { Self.appendHistory(&gpuRendererHistory, v) }
+            if let v = gpu.tiler { Self.appendHistory(&gpuTilerHistory, v) }
+        }
+        if gpuDeviceHistory.count != devices.count {
+            gpuDeviceHistory = Array(repeating: [], count: devices.count)
+        }
+        for i in devices.indices {
+            Self.appendHistory(&gpuDeviceHistory[i], devices[i].usage ?? 0)
+        }
+        snapshot.gpuRendererHistory = gpuRendererHistory
+        snapshot.gpuTilerHistory = gpuTilerHistory
+        snapshot.gpuDeviceHistory = gpuDeviceHistory
+        snapshot.coreHistory = coreHistory
+
+        var pressure: Int32 = 0
+        var pressureSize = MemoryLayout<Int32>.size
+        if sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0) == 0 {
+            snapshot.memoryPressure = Int(pressure)
         }
 
         snapshot.memory = Self.readMemory()
@@ -195,6 +277,8 @@ final class SystemStatsSampler {
         previousPageBytes = (mem.pageinBytes, mem.pageoutBytes, now)
 
         if let bytes = Self.readDiskBytes() {
+            snapshot.diskTotalRead = bytes.read
+            snapshot.diskTotalWritten = bytes.write
             if let prev = previousDiskBytes, now > prev.time,
                bytes.read >= prev.read, bytes.write >= prev.write {
                 let dt = now - prev.time
@@ -318,7 +402,7 @@ final class SystemStatsSampler {
             let nice = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_NICE)]))
             let idle = UInt64(UInt32(bitPattern: info[base + Int(CPU_STATE_IDLE)]))
             let busy = user &+ system &+ nice
-            ticks.append(CPUTicks(busy: busy, total: busy &+ idle))
+            ticks.append(CPUTicks(busy: busy, total: busy &+ idle, user: user &+ nice, system: system))
         }
         return ticks
     }
@@ -406,6 +490,63 @@ final class SystemStatsSampler {
         return nil
     }
 
+    /// Every IOAccelerator with performance statistics (one on Apple
+    /// Silicon). Per-core GPU utilization is not exposed by public APIs.
+    nonisolated private static func readGPUDevices() -> [SystemStatsSnapshot.GPUDevice] {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(
+            kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &iterator
+        ) == KERN_SUCCESS else {
+            return []
+        }
+        defer { IOObjectRelease(iterator) }
+
+        func fraction(_ any: Any?) -> Double? {
+            (any as? NSNumber).map { min(1, max(0, $0.doubleValue / 100)) }
+        }
+        var devices: [SystemStatsSnapshot.GPUDevice] = []
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
+            defer { IOObjectRelease(service) }
+            var propertiesRef: Unmanaged<CFMutableDictionary>?
+            guard IORegistryEntryCreateCFProperties(
+                service, &propertiesRef, kCFAllocatorDefault, 0
+            ) == KERN_SUCCESS,
+                let properties = propertiesRef?.takeRetainedValue() as? [String: Any],
+                let stats = properties["PerformanceStatistics"] as? [String: Any]
+            else {
+                continue
+            }
+            var name = "GPU"
+            if let model = properties["model"] as? String {
+                name = model
+            } else if let data = properties["model"] as? Data {
+                name = String(decoding: data.filter { $0 != 0 }, as: UTF8.self)
+            }
+            devices.append(.init(
+                name: name,
+                cores: (properties["gpu-core-count"] as? NSNumber)?.intValue ?? 0,
+                usage: fraction(stats["Device Utilization %"]),
+                renderer: fraction(stats["Renderer Utilization %"]),
+                tiler: fraction(stats["Tiler Utilization %"]),
+                inUseBytes: (stats["In use system memory"] as? NSNumber)?.uint64Value,
+                allocatedBytes: (stats["Alloc system memory"] as? NSNumber)?.uint64Value
+            ))
+        }
+        return devices
+    }
+
+    nonisolated private static func readCPUName() -> String {
+        var size = 0
+        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else {
+            return "CPU"
+        }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("machdep.cpu.brand_string", &buffer, &size, nil, 0) == 0 else { return "CPU" }
+        return String(cString: buffer)
+    }
+
     // MARK: - Memory
 
     nonisolated private static func readMemory() -> SystemStatsSnapshot.Memory {
@@ -439,6 +580,7 @@ final class SystemStatsSampler {
         var swapSize = MemoryLayout<xsw_usage>.size
         if sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0 {
             memory.swapUsedBytes = swap.xsu_used
+            memory.swapTotalBytes = swap.xsu_total
         }
         memory.compressedBytes = UInt64(stats.compressor_page_count) * page
         memory.pageinBytes = UInt64(stats.pageins) * page
