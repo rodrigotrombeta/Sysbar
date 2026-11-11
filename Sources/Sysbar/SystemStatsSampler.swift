@@ -43,6 +43,10 @@ struct SystemStatsSnapshot: Sendable {
         var totalBytes: UInt64 = 0
         var wiredBytes: UInt64 = 0
         var activeBytes: UInt64 = 0
+        /// "App memory" as Activity Monitor / iStat report it:
+        /// active + inactive + speculative − purgeable − file-backed.
+        var appBytes: UInt64 = 0
+        var swapUsedBytes: UInt64 = 0
         var compressedBytes: UInt64 = 0
         /// Derived as total − (wired + active + compressed) so the four
         /// legend rows always sum to the machine total.
@@ -50,7 +54,7 @@ struct SystemStatsSnapshot: Sendable {
         /// Cumulative page-in / page-out byte counters (for I/O rates).
         var pageinBytes: UInt64 = 0
         var pageoutBytes: UInt64 = 0
-        var usedBytes: UInt64 { wiredBytes + activeBytes + compressedBytes }
+        var usedBytes: UInt64 { appBytes + wiredBytes + compressedBytes }
         var usedFraction: Double {
             totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) : 0
         }
@@ -396,6 +400,15 @@ final class SystemStatsSampler {
         let page = UInt64(pageSize)
         memory.wiredBytes = UInt64(stats.wire_count) * page
         memory.activeBytes = UInt64(stats.active_count) * page
+        let anonymous = Int64(stats.active_count) + Int64(stats.inactive_count)
+            + Int64(stats.speculative_count) - Int64(stats.purgeable_count)
+            - Int64(stats.external_page_count)
+        memory.appBytes = UInt64(max(0, anonymous)) * page
+        var swap = xsw_usage()
+        var swapSize = MemoryLayout<xsw_usage>.size
+        if sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0 {
+            memory.swapUsedBytes = swap.xsu_used
+        }
         memory.compressedBytes = UInt64(stats.compressor_page_count) * page
         memory.pageinBytes = UInt64(stats.pageins) * page
         memory.pageoutBytes = UInt64(stats.pageouts) * page

@@ -5,6 +5,16 @@
 import AppKit
 import SwiftUI
 
+/// Memory breakdown colors (same scheme as iStat Menus / Activity Monitor
+/// style): App green, Wired orange, Compressed magenta.
+enum MemoryPalette {
+    static let app = NSColor.systemGreen
+    static let wired = NSColor.systemOrange
+    static let compressed = NSColor(calibratedRed: 0.93, green: 0.22, blue: 0.93, alpha: 1)
+    /// Unused part of pies/bars in colored modes.
+    static let track = NSColor.systemGray.withAlphaComponent(0.55)
+}
+
 struct StatsTheme {
     static let callout: CGFloat = 12.5
     static let caption: CGFloat = 10.5
