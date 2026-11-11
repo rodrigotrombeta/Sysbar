@@ -96,68 +96,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(statsItem)
         menu.addItem(.separator())
 
-        // Which metrics animate the icon (multi-select).
+        // Which metrics animate the icon (multi-select). Memory and Disk are
+        // submenus: show/hide plus their own chart type.
         let metricsMenu = NSMenu()
         let selected = Settings.metrics
         for metric in IconMetric.allCases {
-            let item = NSMenuItem(title: metric.title, action: #selector(toggleMetric(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = metric.rawValue
-            item.state = selected.contains(metric) ? .on : .off
-            metricsMenu.addItem(item)
+            if metric.hasOwnChart {
+                if metric == .memory { metricsMenu.addItem(.separator()) }
+                let parent = NSMenuItem(title: metric.title, action: nil, keyEquivalent: "")
+                parent.state = selected.contains(metric) ? .on : .off
+                let sub = NSMenu()
+                let show = menuItem(tr("Show in icon", "Mostrar no ícone"), #selector(toggleMetric(_:)),
+                                    metric.rawValue, on: selected.contains(metric))
+                sub.addItem(show)
+                sub.addItem(.separator())
+                for chart in MetricChart.allCases {
+                    sub.addItem(menuItem(chart.title, #selector(selectChart(_:)),
+                                         "\(metric.rawValue):\(chart.rawValue)",
+                                         on: metric.chartKind == chart))
+                }
+                parent.submenu = sub
+                metricsMenu.addItem(parent)
+            } else {
+                metricsMenu.addItem(menuItem(metric.title, #selector(toggleMetric(_:)),
+                                             metric.rawValue, on: selected.contains(metric)))
+            }
         }
-        addSubmenu("Métricas no ícone", metricsMenu)
+        addSubmenu(tr("Icon metrics", "Métricas no ícone"), metricsMenu)
 
         let styleMenu = NSMenu()
         for style in IconStyle.allCases {
-            let item = NSMenuItem(title: style.title, action: #selector(selectStyle(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = style.rawValue
-            item.state = Settings.style == style ? .on : .off
-            styleMenu.addItem(item)
+            styleMenu.addItem(menuItem(style.title, #selector(selectStyle(_:)), style.rawValue,
+                                       on: Settings.style == style))
         }
         styleMenu.addItem(.separator())
-        let labelItem = NSMenuItem(title: "Mostrar rótulo", action: #selector(toggleLabel(_:)), keyEquivalent: "")
-        labelItem.target = self
-        labelItem.state = Settings.showLabel ? .on : .off
-        styleMenu.addItem(labelItem)
-        addSubmenu("Estilo do ícone", styleMenu)
+        styleMenu.addItem(menuItem(tr("Show label", "Mostrar rótulo"), #selector(toggleLabel(_:)),
+                                   nil, on: Settings.showLabel))
+        addSubmenu(tr("Icon style", "Estilo do ícone"), styleMenu)
 
         let colorMenu = NSMenu()
         for mode in IconColorMode.allCases {
-            let item = NSMenuItem(title: mode.title, action: #selector(selectColor(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode.rawValue
-            item.state = Settings.colorMode == mode ? .on : .off
-            colorMenu.addItem(item)
+            colorMenu.addItem(menuItem(mode.title, #selector(selectColor(_:)), mode.rawValue,
+                                       on: Settings.colorMode == mode))
         }
-        addSubmenu("Cores", colorMenu)
+        addSubmenu(tr("Colors", "Cores"), colorMenu)
 
         let intervalMenu = NSMenu()
         for interval in Settings.intervals {
             let title = interval < 1 ? "\(Int(interval * 1000)) ms" : "\(Int(interval)) s"
-            let item = NSMenuItem(title: title, action: #selector(selectInterval(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = interval
-            item.state = Settings.interval == interval ? .on : .off
-            intervalMenu.addItem(item)
+            intervalMenu.addItem(menuItem(title, #selector(selectInterval(_:)), interval,
+                                          on: Settings.interval == interval))
         }
-        addSubmenu("Intervalo de atualização", intervalMenu)
+        addSubmenu(tr("Refresh interval", "Intervalo de atualização"), intervalMenu)
+
+        let languageMenu = NSMenu()
+        for language in Language.allCases {
+            languageMenu.addItem(menuItem(language.title, #selector(selectLanguage(_:)),
+                                          language.rawValue, on: Settings.language == language))
+        }
+        addSubmenu(tr("Language", "Idioma (Language)"), languageMenu)
 
         menu.addItem(.separator())
 
-        let login = NSMenuItem(title: "Abrir ao iniciar sessão", action: #selector(toggleLogin(_:)), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
-
-        let activity = NSMenuItem(title: "Abrir Monitor de Atividade", action: #selector(openActivityMonitor), keyEquivalent: "")
-        activity.target = self
-        menu.addItem(activity)
+        menu.addItem(menuItem(tr("Open at login", "Abrir ao iniciar sessão"), #selector(toggleLogin(_:)),
+                              nil, on: SMAppService.mainApp.status == .enabled))
+        menu.addItem(menuItem(tr("Open Activity Monitor", "Abrir Monitor de Atividade"),
+                              #selector(openActivityMonitor), nil, on: false))
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Sair do Sysbar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        menu.addItem(NSMenuItem(title: tr("Quit Sysbar", "Sair do Sysbar"),
+                                action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    private func menuItem(_ title: String, _ action: Selector, _ object: Any?, on: Bool) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.representedObject = object
+        item.state = on ? .on : .off
+        return item
     }
 
     private func addSubmenu(_ title: String, _ submenu: NSMenu) {
@@ -184,6 +200,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             metrics.append(metric)
         }
         Settings.metrics = metrics
+        settingsChanged()
+    }
+
+    @objc private func selectChart(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        let parts = raw.split(separator: ":").map(String.init)
+        guard parts.count == 2, let metric = IconMetric(rawValue: parts[0]),
+              let chart = MetricChart(rawValue: parts[1]) else { return }
+        if metric == .memory { Settings.memoryChart = chart }
+        if metric == .disk { Settings.diskChart = chart }
+        // Picking a chart implies you want to see it.
+        if !Settings.metrics.contains(metric) { Settings.metrics = Settings.metrics + [metric] }
+        settingsChanged()
+    }
+
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let language = Language(rawValue: raw) else { return }
+        Settings.language = language
         settingsChanged()
     }
 
@@ -222,8 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Não foi possível alterar o início automático"
-            alert.informativeText = "\(error.localizedDescription)\n\nDica: mova o Sysbar.app para /Applications e tente de novo."
+            alert.messageText = tr("Could not change Open at login", "Não foi possível alterar o início automático")
+            alert.informativeText = error.localizedDescription + tr("\n\nTip: move Sysbar.app to /Applications and try again.", "\n\nDica: mova o Sysbar.app para /Applications e tente de novo.")
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }

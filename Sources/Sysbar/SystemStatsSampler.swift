@@ -1,7 +1,8 @@
 // Adapted from oMLX (https://github.com/jundot/omlx), apps/omlx-mac/Sources/
 // Menubar/SystemStatsSampler.swift — Apache License 2.0. Changes: standalone
 // history buffers (no MenubarMetricsStore), extra histories for the
-// animated status-bar icon (total CPU, memory, GPU memory).
+// animated status-bar icon (total CPU, memory, GPU memory), disk usage and
+// disk / memory (page-in/out) I/O rates.
 //
 // Host-level stats behind the menubar's System Stats submenu. Everything
 // here is public API only: Mach per-CPU tick counters (E/P cluster split
@@ -25,12 +26,14 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case cpu
     case gpu
     case memory
+    case disk
 
     var tag: String {
         switch self {
         case .cpu: return "CPU"
         case .gpu: return "GPU"
         case .memory: return "MEM"
+        case .disk: return "DISK"
         }
     }
 }
@@ -44,7 +47,26 @@ struct SystemStatsSnapshot: Sendable {
         /// Derived as total − (wired + active + compressed) so the four
         /// legend rows always sum to the machine total.
         var freeBytes: UInt64 = 0
+        /// Cumulative page-in / page-out byte counters (for I/O rates).
+        var pageinBytes: UInt64 = 0
+        var pageoutBytes: UInt64 = 0
         var usedBytes: UInt64 { wiredBytes + activeBytes + compressedBytes }
+        var usedFraction: Double {
+            totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) : 0
+        }
+    }
+
+    /// Bytes per second.
+    struct IORate: Sendable {
+        var read: Double
+        var write: Double
+    }
+
+    struct Disk: Sendable {
+        var name: String
+        var totalBytes: UInt64
+        var freeBytes: UInt64
+        var usedBytes: UInt64 { totalBytes > freeBytes ? totalBytes - freeBytes : 0 }
         var usedFraction: Double {
             totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) : 0
         }
@@ -69,6 +91,16 @@ struct SystemStatsSnapshot: Sendable {
     var memoryHistory: [Double] = []
     var gpuMemoryHistory: [Double] = []
 
+    var disk: Disk?
+    /// Disk read/write throughput (all block-storage drivers).
+    var diskIO: IORate?
+    /// Memory page-ins (read) / page-outs (write).
+    var memoryIO: IORate?
+    var diskReadHistory: [Double] = []
+    var diskWriteHistory: [Double] = []
+    var memoryInHistory: [Double] = []
+    var memoryOutHistory: [Double] = []
+
     /// GPU in-use memory as a fraction of physical memory (unified memory).
     var gpuMemoryFraction: Double? {
         guard let inUse = gpuMemoryInUseBytes, memory.totalBytes > 0 else { return nil }
@@ -91,6 +123,14 @@ final class SystemStatsSampler {
     private var cpuHistory: [Double] = []
     private var memoryHistory: [Double] = []
     private var gpuMemoryHistory: [Double] = []
+    private var diskReadHistory: [Double] = []
+    private var diskWriteHistory: [Double] = []
+    private var memoryInHistory: [Double] = []
+    private var memoryOutHistory: [Double] = []
+    private var previousDiskBytes: (read: UInt64, write: UInt64, time: TimeInterval)?
+    private var previousPageBytes: (pagein: UInt64, pageout: UInt64, time: TimeInterval)?
+    private var cachedDisk: SystemStatsSnapshot.Disk?
+    private var diskReadAt: TimeInterval = -.infinity
     private let eCoreCount = SystemStatsSampler.readECoreCount()
 
     func sample() -> SystemStatsSnapshot {
@@ -124,6 +164,41 @@ final class SystemStatsSampler {
         if let gpuMem = snapshot.gpuMemoryFraction {
             Self.appendHistory(&gpuMemoryHistory, gpuMem)
         }
+        let now = ProcessInfo.processInfo.systemUptime
+        let mem = snapshot.memory
+        if let prev = previousPageBytes, now > prev.time,
+           mem.pageinBytes >= prev.pagein, mem.pageoutBytes >= prev.pageout {
+            let dt = now - prev.time
+            let rate = SystemStatsSnapshot.IORate(
+                read: Double(mem.pageinBytes - prev.pagein) / dt,
+                write: Double(mem.pageoutBytes - prev.pageout) / dt)
+            snapshot.memoryIO = rate
+            Self.appendHistory(&memoryInHistory, rate.read)
+            Self.appendHistory(&memoryOutHistory, rate.write)
+        }
+        previousPageBytes = (mem.pageinBytes, mem.pageoutBytes, now)
+
+        if let bytes = Self.readDiskBytes() {
+            if let prev = previousDiskBytes, now > prev.time,
+               bytes.read >= prev.read, bytes.write >= prev.write {
+                let dt = now - prev.time
+                let rate = SystemStatsSnapshot.IORate(
+                    read: Double(bytes.read - prev.read) / dt,
+                    write: Double(bytes.write - prev.write) / dt)
+                snapshot.diskIO = rate
+                Self.appendHistory(&diskReadHistory, rate.read)
+                Self.appendHistory(&diskWriteHistory, rate.write)
+            }
+            previousDiskBytes = (bytes.read, bytes.write, now)
+        }
+
+        // Volume capacity changes slowly; refresh it every 10 s.
+        if cachedDisk == nil || now - diskReadAt >= 10 {
+            cachedDisk = Self.readDiskUsage() ?? cachedDisk
+            diskReadAt = now
+        }
+        snapshot.disk = cachedDisk
+
         var loads = [Double](repeating: 0, count: 3)
         if getloadavg(&loads, 3) == 3 {
             snapshot.loadAverages = loads
@@ -137,6 +212,10 @@ final class SystemStatsSampler {
         snapshot.cpuHistory = cpuHistory
         snapshot.memoryHistory = memoryHistory
         snapshot.gpuMemoryHistory = gpuMemoryHistory
+        snapshot.diskReadHistory = diskReadHistory
+        snapshot.diskWriteHistory = diskWriteHistory
+        snapshot.memoryInHistory = memoryInHistory
+        snapshot.memoryOutHistory = memoryOutHistory
         return snapshot
     }
 
@@ -318,10 +397,64 @@ final class SystemStatsSampler {
         memory.wiredBytes = UInt64(stats.wire_count) * page
         memory.activeBytes = UInt64(stats.active_count) * page
         memory.compressedBytes = UInt64(stats.compressor_page_count) * page
+        memory.pageinBytes = UInt64(stats.pageins) * page
+        memory.pageoutBytes = UInt64(stats.pageouts) * page
         memory.freeBytes = memory.totalBytes > memory.usedBytes
             ? memory.totalBytes - memory.usedBytes
             : 0
         return memory
+    }
+
+    // MARK: - Disk
+
+    /// Cumulative bytes read/written, summed over every IOBlockStorageDriver
+    /// (public IOKit registry "Statistics" dictionary).
+    nonisolated private static func readDiskBytes() -> (read: UInt64, write: UInt64)? {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(
+            kIOMainPortDefault, IOServiceMatching("IOBlockStorageDriver"), &iterator
+        ) == KERN_SUCCESS else {
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var read: UInt64 = 0
+        var write: UInt64 = 0
+        var found = false
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
+            defer { IOObjectRelease(service) }
+            guard let stats = IORegistryEntryCreateCFProperty(
+                service, "Statistics" as CFString, kCFAllocatorDefault, 0
+            )?.takeRetainedValue() as? [String: Any] else {
+                continue
+            }
+            if let v = stats["Bytes (Read)"] as? NSNumber { read &+= v.uint64Value; found = true }
+            if let v = stats["Bytes (Write)"] as? NSNumber { write &+= v.uint64Value; found = true }
+        }
+        return found ? (read, write) : nil
+    }
+
+    /// Capacity of the startup volume ("available" includes purgeable space,
+    /// like Finder reports it).
+    nonisolated private static func readDiskUsage() -> SystemStatsSnapshot.Disk? {
+        let url = URL(fileURLWithPath: "/")
+        guard let values = try? url.resourceValues(forKeys: [
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey,
+            .volumeLocalizedNameKey,
+        ]), let total = values.volumeTotalCapacity, total > 0 else {
+            return nil
+        }
+        let free = values.volumeAvailableCapacityForImportantUsage
+            ?? Int64(values.volumeAvailableCapacity ?? 0)
+        return SystemStatsSnapshot.Disk(
+            name: values.volumeLocalizedName ?? "Macintosh HD",
+            totalBytes: UInt64(total),
+            freeBytes: UInt64(max(0, free))
+        )
     }
 
     // MARK: - Misc readings
@@ -360,6 +493,15 @@ final class SystemStatsSampler {
     nonisolated static func formatLoadAverages(_ loads: [Double]) -> String {
         guard !loads.isEmpty else { return "–" }
         return loads.map { String(format: "%.2f", $0) }.joined(separator: " · ")
+    }
+
+    /// "0 B/s" / "512 KB/s" / "1.2 MB/s" (decimal units).
+    nonisolated static func formatRate(_ bytesPerSecond: Double?) -> String {
+        guard let v = bytesPerSecond, v.isFinite else { return "–" }
+        if v >= 1_000_000_000 { return String(format: "%.1f GB/s", v / 1_000_000_000) }
+        if v >= 1_000_000 { return String(format: "%.1f MB/s", v / 1_000_000) }
+        if v >= 1_000 { return String(format: "%.0f KB/s", v / 1_000) }
+        return String(format: "%.0f B/s", v)
     }
 
     /// "237.29 GB" / "730 MB" — legend-row byte formatting, decimal units

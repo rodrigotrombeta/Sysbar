@@ -4,12 +4,14 @@
 
 A tiny macOS menu bar app that shows the **System Stats** panel from
 [oMLX](https://github.com/jundot/omlx) — CPU E/P-core usage, thermal state,
-load average, uptime, GPU usage, GPU memory and a memory breakdown — behind an
-animated, [Stats](https://github.com/exelban/stats)-style menu bar icon.
+load average, uptime, GPU usage, GPU memory and a memory breakdown — plus a
+Disk panel (usage, read/write speed), behind an animated,
+[Stats](https://github.com/exelban/stats)-style menu bar icon.
+Available in **English** and **Portuguese**.
 
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
-- Public APIs only (Mach host statistics, IOKit accelerator stats,
-  `vm_statistics64`) — no `sudo`, no helper tools.
+- Public APIs only (Mach host statistics, IOKit accelerator and block-storage
+  stats, `vm_statistics64`) — no `sudo`, no helper tools.
 - Runs as a menu bar–only app (no Dock icon).
 
 ## Requirements
@@ -67,15 +69,18 @@ remove Sysbar under System Settings → General → Login Items).
 
 ## Using it
 
-Click the menu bar icon to see the CPU / GPU / Memory panels. Below them:
+Click the menu bar icon to see the CPU / GPU / Memory / Disk panels. Below them:
 
 | Menu | Options |
 |---|---|
-| **Métricas no ícone** (icon metrics) | One or more of: CPU (total), CPU E-cores, CPU P-cores, GPU, GPU memory, RAM. Each becomes its own mini widget that moves with usage. |
-| **Estilo do ícone** (icon style) | Line chart, bar, percentage, or chart + percentage; toggle the small stacked label (CPU/GPU/RAM). |
-| **Cores** (colors) | Monochrome (follows the menu bar theme), per-metric color, or by utilization (green → orange → red). |
-| **Intervalo de atualização** (refresh interval) | 0.5 s – 5 s. |
-| **Abrir ao iniciar sessão** | Launch at login (requires the app in `/Applications`). |
+| **Icon metrics** | One or more of: CPU (total), CPU E-cores, CPU P-cores, GPU, GPU memory, **Memory**, **Disk**. Each becomes its own mini widget that moves with usage. |
+| ↳ **Memory** | *Show in icon* + chart: **Pie chart** or **Bar** (memory used) or **I/O** (page-ins up / page-outs down). |
+| ↳ **Disk** | *Show in icon* + chart: **Pie chart** or **Bar** (startup volume used) or **I/O** (reads up / writes down). |
+| **Icon style** | For the CPU/GPU metrics: line chart, bar, percentage, or chart + percentage; toggle the small stacked label (CPU/GPU/RAM/SSD). |
+| **Colors** | Monochrome (follows the menu bar theme), per-metric color, or by utilization (green → orange → red). I/O charts use blue (read) / red (write). |
+| **Refresh interval** | 0.5 s – 5 s. |
+| **Language** | English or Português — switches the whole app instantly. Defaults to your macOS language. |
+| **Open at login** | Launch at login (requires the app in `/Applications`). |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).
 
@@ -94,8 +99,9 @@ panel, then exits.
 Sources/Sysbar/
   main.swift                 app entry point (+ --preview mode)
   AppDelegate.swift          status item, menu, sampling timer, settings actions
-  SystemStatsSampler.swift   CPU/GPU/memory readings   (adapted from oMLX)
-  SystemStatsPanels.swift    CPU/GPU/Memory SwiftUI panels (adapted from oMLX)
+  SystemStatsSampler.swift   CPU/GPU/memory/disk readings (adapted from oMLX)
+  SystemStatsPanels.swift    CPU/GPU/Memory/Disk SwiftUI panels (adapted from oMLX)
+  Localization.swift         English / Portuguese strings (tr("en", "pt"))
   StatsTheme.swift           colors/fonts + sparkline view
   StatusIconRenderer.swift   animated Stats-style menu bar icon
   IconSettings.swift         icon metrics/style/color options (UserDefaults)

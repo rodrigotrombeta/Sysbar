@@ -4,17 +4,18 @@ import AppKit
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable {
-    case cpu, eCores, pCores, gpu, gpuMemory, memory
+    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk
 
     /// Menu title.
     var title: String {
         switch self {
-        case .cpu: return "CPU (total)"
-        case .eCores: return "CPU E-cores"
-        case .pCores: return "CPU P-cores"
+        case .cpu: return tr("CPU (total)", "CPU (total)")
+        case .eCores: return tr("CPU E-cores", "CPU E-cores")
+        case .pCores: return tr("CPU P-cores", "CPU P-cores")
         case .gpu: return "GPU"
-        case .gpuMemory: return "Memória da GPU"
-        case .memory: return "Memória (RAM)"
+        case .gpuMemory: return tr("GPU memory", "Memória da GPU")
+        case .memory: return tr("Memory", "Memória")
+        case .disk: return tr("Disk", "Disco")
         }
     }
 
@@ -27,6 +28,7 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return "GPU"
         case .gpuMemory: return "VM"
         case .memory: return "RAM"
+        case .disk: return "SSD"
         }
     }
 
@@ -38,6 +40,19 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return .systemGreen
         case .gpuMemory: return .systemCyan
         case .memory: return .systemPurple
+        case .disk: return .systemIndigo
+        }
+    }
+
+    /// Memory and Disk pick their own chart (pie / bar / I/O); the other
+    /// metrics follow the global icon style.
+    var hasOwnChart: Bool { self == .memory || self == .disk }
+
+    var chartKind: MetricChart? {
+        switch self {
+        case .memory: return Settings.memoryChart
+        case .disk: return Settings.diskChart
+        default: return nil
         }
     }
 
@@ -49,6 +64,7 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return s.gpuUsage
         case .gpuMemory: return s.gpuMemoryFraction
         case .memory: return s.memory.totalBytes > 0 ? s.memory.usedFraction : nil
+        case .disk: return s.disk?.usedFraction
         }
     }
 
@@ -60,6 +76,29 @@ enum IconMetric: String, CaseIterable {
         case .gpu: return s.gpuHistory
         case .gpuMemory: return s.gpuMemoryHistory
         case .memory: return s.memoryHistory
+        case .disk: return []
+        }
+    }
+
+    /// Read/write (or page-in/page-out) rate histories, bytes/s.
+    func ioHistory(in s: SystemStatsSnapshot) -> (read: [Double], write: [Double]) {
+        switch self {
+        case .memory: return (s.memoryInHistory, s.memoryOutHistory)
+        case .disk: return (s.diskReadHistory, s.diskWriteHistory)
+        default: return ([], [])
+        }
+    }
+}
+
+/// Chart used by the Memory and Disk widgets.
+enum MetricChart: String, CaseIterable {
+    case pie, bar, io
+
+    var title: String {
+        switch self {
+        case .pie: return tr("Pie chart", "Gráfico de pizza")
+        case .bar: return tr("Bar", "Barra")
+        case .io: return tr("I/O (read / write)", "I/O (leitura / escrita)")
         }
     }
 }
@@ -69,10 +108,10 @@ enum IconStyle: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .lineChart: return "Gráfico de linha"
-        case .barChart: return "Barra"
-        case .percent: return "Porcentagem"
-        case .lineAndPercent: return "Gráfico + porcentagem"
+        case .lineChart: return tr("Line chart", "Gráfico de linha")
+        case .barChart: return tr("Bar", "Barra")
+        case .percent: return tr("Percentage", "Porcentagem")
+        case .lineAndPercent: return tr("Chart + percentage", "Gráfico + porcentagem")
         }
     }
 }
@@ -82,9 +121,9 @@ enum IconColorMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .monochrome: return "Monocromático"
-        case .metric: return "Cor da métrica"
-        case .utilization: return "Por utilização (verde → vermelho)"
+        case .monochrome: return tr("Monochrome", "Monocromático")
+        case .metric: return tr("Metric color", "Cor da métrica")
+        case .utilization: return tr("By utilization (green → red)", "Por utilização (verde → vermelho)")
         }
     }
 }
@@ -108,6 +147,16 @@ enum Settings {
         set { defaults.set(newValue.rawValue, forKey: "iconStyle") }
     }
 
+    static var memoryChart: MetricChart {
+        get { defaults.string(forKey: "memoryChart").flatMap(MetricChart.init(rawValue:)) ?? .bar }
+        set { defaults.set(newValue.rawValue, forKey: "memoryChart") }
+    }
+
+    static var diskChart: MetricChart {
+        get { defaults.string(forKey: "diskChart").flatMap(MetricChart.init(rawValue:)) ?? .pie }
+        set { defaults.set(newValue.rawValue, forKey: "diskChart") }
+    }
+
     static var colorMode: IconColorMode {
         get { defaults.string(forKey: "iconColorMode").flatMap(IconColorMode.init(rawValue:)) ?? .monochrome }
         set { defaults.set(newValue.rawValue, forKey: "iconColorMode") }
@@ -116,6 +165,11 @@ enum Settings {
     static var showLabel: Bool {
         get { defaults.object(forKey: "iconShowLabel") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "iconShowLabel") }
+    }
+
+    static var language: Language {
+        get { defaults.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault }
+        set { defaults.set(newValue.rawValue, forKey: "language") }
     }
 
     static let intervals: [TimeInterval] = [0.5, 1, 2, 3, 5]

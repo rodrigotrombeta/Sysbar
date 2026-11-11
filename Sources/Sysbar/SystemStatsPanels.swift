@@ -28,25 +28,19 @@ struct CPUStatsPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             StatsPanelHeader(title: "CPU")
             UsageBarRow(
-                label: String(localized: "menubar.system.e_cores",
-                              defaultValue: "E-cores",
-                              comment: "CPU panel row label for efficiency-core usage"),
+                label: tr("E-cores", "E-cores"),
                 value: StatsFormat.percent(snapshot.eCoreUsage),
                 fraction: snapshot.eCoreUsage ?? 0,
                 color: eColor
             )
             UsageBarRow(
-                label: String(localized: "menubar.system.p_cores",
-                              defaultValue: "P-cores",
-                              comment: "CPU panel row label for performance-core usage"),
+                label: tr("P-cores", "P-cores"),
                 value: StatsFormat.percent(snapshot.pCoreUsage),
                 fraction: snapshot.pCoreUsage ?? 0,
                 color: pColor
             )
             StatsPanelCaption(
-                text: String(localized: "menubar.system.cpu_caption",
-                             defaultValue: "E (amber) / P (blue) usage",
-                             comment: "CPU panel caption under the usage bars"),
+                text: tr("E (amber) / P (blue) usage", "Uso E (âmbar) / P (azul)"),
                 window: StatsFormat.window(sampleCount: snapshot.eHistory.count,
                                            interval: refreshInterval)
             )
@@ -58,21 +52,15 @@ struct CPUStatsPanel: View {
             }
             Divider()
             StatsValueRow(
-                label: String(localized: "menubar.system.thermal",
-                              defaultValue: "Thermal",
-                              comment: "CPU panel row label for the system thermal state"),
+                label: tr("Thermal", "Térmico"),
                 value: StatsFormat.thermal(snapshot.thermalState)
             )
             StatsValueRow(
-                label: String(localized: "menubar.system.load_avg",
-                              defaultValue: "Load avg",
-                              comment: "CPU panel row label for the 1/5/15-minute load averages"),
+                label: tr("Load avg", "Carga média"),
                 value: SystemStatsSampler.formatLoadAverages(snapshot.loadAverages)
             )
             StatsValueRow(
-                label: String(localized: "menubar.system.uptime",
-                              defaultValue: "Uptime",
-                              comment: "CPU panel row label for system uptime"),
+                label: tr("Uptime", "Tempo ligado"),
                 value: SystemStatsSampler.formatUptime(snapshot.uptimeSeconds)
             )
         }
@@ -103,21 +91,15 @@ struct GPUStatsPanel: View {
                 color: gpuColor
             )
             UsageBarRow(
-                label: String(localized: "menubar.system.gpu_memory",
-                              defaultValue: "GPU memory",
-                              comment: "GPU panel row label for accelerator in-use memory"),
+                label: tr("GPU memory", "Memória da GPU"),
                 value: snapshot.gpuMemoryInUseBytes.map {
-                    String(localized: "menubar.system.in_use",
-                           defaultValue: "\(SystemStatsSampler.formatBytes($0)) in use",
-                           comment: "GPU memory value; placeholder is a byte size like 2.60 GB")
+                    SystemStatsSampler.formatBytes($0) + tr(" in use", " em uso")
                 } ?? "–",
                 fraction: gpuMemoryFraction,
                 color: gpuMemColor
             )
             StatsPanelCaption(
-                text: String(localized: "menubar.system.gpu_caption",
-                             defaultValue: "GPU (green) / GPU mem (cyan)",
-                             comment: "GPU panel caption under the usage bars"),
+                text: tr("GPU (green) / GPU mem (cyan)", "GPU (verde) / mem. GPU (ciano)"),
                 window: StatsFormat.window(sampleCount: snapshot.gpuHistory.count,
                                            interval: refreshInterval)
             )
@@ -153,11 +135,7 @@ struct MemoryStatsPanel: View {
     var body: some View {
         let memory = snapshot.memory
         VStack(alignment: .leading, spacing: 6) {
-            StatsPanelHeader(title: String(
-                localized: "menubar.system.memory_title",
-                defaultValue: "Memory",
-                comment: "Title of the Memory panel in the System Stats submenu"
-            ))
+            StatsPanelHeader(title: tr("Memory", "Memória"))
             HStack {
                 Text("\(StatsFormat.gib(memory.usedBytes)) / \(StatsFormat.wholeGiB(memory.totalBytes)) GB")
                     .font(StatsTheme.mono(StatsTheme.callout, weight: .semibold))
@@ -176,25 +154,21 @@ struct MemoryStatsPanel: View {
                 ]
             )
             legendRow(color: wiredColor,
-                      label: String(localized: "menubar.system.wired",
-                                    defaultValue: "Wired",
-                                    comment: "Memory panel legend row for wired memory"),
+                      label: tr("Wired", "Fixa"),
                       bytes: memory.wiredBytes)
             legendRow(color: activeColor,
-                      label: String(localized: "menubar.system.active",
-                                    defaultValue: "Active",
-                                    comment: "Memory panel legend row for active memory"),
+                      label: tr("Active", "Ativa"),
                       bytes: memory.activeBytes)
             legendRow(color: compressedColor,
-                      label: String(localized: "menubar.system.compressed",
-                                    defaultValue: "Compressed",
-                                    comment: "Memory panel legend row for compressed memory"),
+                      label: tr("Compressed", "Comprimida"),
                       bytes: memory.compressedBytes)
             legendRow(color: theme.textTertiary.opacity(0.4),
-                      label: String(localized: "menubar.system.free",
-                                    defaultValue: "Free",
-                                    comment: "Memory panel legend row for free memory"),
+                      label: tr("Free", "Livre"),
                       bytes: memory.freeBytes)
+            StatsValueRow(
+                label: tr("Page in / out", "Paginação E/S"),
+                value: "\(SystemStatsSampler.formatRate(snapshot.memoryIO?.read)) · \(SystemStatsSampler.formatRate(snapshot.memoryIO?.write))"
+            )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -214,6 +188,58 @@ struct MemoryStatsPanel: View {
                 .font(StatsTheme.mono(11.5))
                 .foregroundStyle(theme.text)
         }
+    }
+}
+
+// MARK: - Disk (Sysbar addition)
+
+struct DiskStatsPanel: View {
+    let snapshot: SystemStatsSnapshot
+    let refreshInterval: TimeInterval
+
+    private let theme = StatsTheme()
+    private var usageColor: Color { Color(nsColor: .systemIndigo) }
+    private var readColor: Color { Color(nsColor: .systemBlue) }
+    private var writeColor: Color { Color(nsColor: .systemRed) }
+
+    var body: some View {
+        let disk = snapshot.disk
+        VStack(alignment: .leading, spacing: 6) {
+            StatsPanelHeader(title: tr("Disk", "Disco"))
+            UsageBarRow(
+                label: disk?.name ?? tr("Disk", "Disco"),
+                value: disk.map {
+                    "\(Int((Double($0.usedBytes) / 1e9).rounded())) / \(Int((Double($0.totalBytes) / 1e9).rounded())) GB"
+                } ?? "–",
+                fraction: disk?.usedFraction ?? 0,
+                color: usageColor
+            )
+            StatsValueRow(label: tr("Free", "Livre"),
+                          value: disk.map { SystemStatsSampler.formatBytes($0.freeBytes) } ?? "–")
+            StatsValueRow(label: tr("Read", "Leitura"),
+                          value: SystemStatsSampler.formatRate(snapshot.diskIO?.read))
+            StatsValueRow(label: tr("Write", "Escrita"),
+                          value: SystemStatsSampler.formatRate(snapshot.diskIO?.write))
+            StatsPanelCaption(
+                text: tr("Read (blue) / Write (red)", "Leitura (azul) / Escrita (vermelho)"),
+                window: StatsFormat.window(sampleCount: snapshot.diskReadHistory.count,
+                                           interval: refreshInterval)
+            )
+            ZStack {
+                MetricSparkline(values: snapshot.diskWriteHistory, color: writeColor,
+                                height: 26, domain: 0...ioPeak)
+                MetricSparkline(values: snapshot.diskReadHistory, color: readColor,
+                                height: 26, domain: 0...ioPeak)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(width: panelWidth)
+    }
+
+    /// Shared Y scale for both series, never below 256 KB/s.
+    private var ioPeak: Double {
+        max(256_000, snapshot.diskReadHistory.max() ?? 0, snapshot.diskWriteHistory.max() ?? 0)
     }
 }
 
@@ -252,6 +278,8 @@ struct SystemStatsPanelStack: View {
             GPUStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         case .memory:
             MemoryStatsPanel(snapshot: snapshot)
+        case .disk:
+            DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         }
     }
 }
@@ -391,11 +419,11 @@ enum StatsFormat {
 
     static func thermal(_ state: ProcessInfo.ThermalState) -> String {
         switch state {
-        case .nominal: return "Nominal"
-        case .fair: return "Fair"
-        case .serious: return "Serious"
-        case .critical: return "Critical"
-        @unknown default: return "Critical"
+        case .nominal: return tr("Nominal", "Normal")
+        case .fair: return tr("Fair", "Razoável")
+        case .serious: return tr("Serious", "Sério")
+        case .critical: return tr("Critical", "Crítico")
+        @unknown default: return tr("Critical", "Crítico")
         }
     }
 
