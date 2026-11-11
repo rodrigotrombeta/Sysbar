@@ -18,6 +18,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Sysbar"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Apache-2.0 §4(a): ship the license with every distributed copy (before signing).
+cp LICENSE "$APP/Contents/Resources/LICENSE"
 # Ad-hoc signature (no Developer ID): users confirm the first launch once.
 codesign --force --deep --sign - "$APP"
 codesign --verify --strict "$APP"
@@ -27,6 +29,7 @@ echo "==> Creating DMG"
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+cp LICENSE "$STAGE/LICENSE.txt"
 hdiutil create -volname "Sysbar $VERSION" -srcfolder "$STAGE" -ov -format UDZO \
     "$DIST/Sysbar-$VERSION.dmg" >/dev/null
 rm -rf "$STAGE"
