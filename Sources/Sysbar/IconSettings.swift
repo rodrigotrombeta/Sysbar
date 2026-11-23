@@ -359,17 +359,7 @@ enum Settings {
 
     static var sectionOrder: [SystemStatKind] { store.sectionOrder }
 
-    /// Moves a panel section one place up (-1) or down (+1).
-    static func moveSection(_ kind: SystemStatKind, by offset: Int) {
-        var list = store.sectionOrder
-        guard let from = list.firstIndex(of: kind) else { return }
-        let to = from + offset
-        guard list.indices.contains(to) else { return }
-        list.swapAt(from, to)
-        store.sectionOrder = list
-    }
-
-    /// Moves a panel section to `index` (drag and drop on the edge panel).
+    /// Moves a panel section to `index` (drag and drop in the panel).
     static func moveSection(_ kind: SystemStatKind, to index: Int) {
         var list = store.sectionOrder
         guard let from = list.firstIndex(of: kind) else { return }

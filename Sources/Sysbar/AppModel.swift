@@ -33,10 +33,6 @@ final class AppModel {
     /// Mute mode changed: hover-opened details of muted sections close.
     @ObservationIgnored var muteChanged: () -> Void = {}
 
-    func moveSection(_ kind: SystemStatKind, by offset: Int) {
-        Settings.moveSection(kind, by: offset)
-    }
-
     func moveSection(_ kind: SystemStatKind, to index: Int) {
         Settings.moveSection(kind, to: index)
     }

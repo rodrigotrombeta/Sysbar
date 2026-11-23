@@ -56,7 +56,7 @@ struct MainPanelView: View {
             ForEach(Array(order.enumerated()), id: \.element) { index, kind in
                 if index > 0 { SectionRule() }
                 SectionHost(model: model, kind: kind, context: context,
-                            index: index, count: order.count)
+                            index: index)
             }
         }
         .padding(.bottom, 6)
@@ -69,14 +69,13 @@ private struct ContentHeightKey: PreferenceKey {
 }
 
 /// One section: reports its frame, shows a pin badge when its details are
-/// pinned, and pins/unpins the details on click. It moves with the ▲/▼
-/// arrows, or — on the edge-pinned panel — by dragging its title row.
+/// pinned, and pins/unpins the details on click. Drag its title row up or
+/// down to move it.
 private struct SectionHost: View {
     let model: AppModel
     let kind: SystemStatKind
     let context: PanelContext
     let index: Int
-    let count: Int
     @State private var dropTargeted = false
 
     var body: some View {
@@ -93,19 +92,9 @@ private struct SectionHost: View {
                                                total: s.memory.totalBytes)
             }
         }
-        .overlay(alignment: .top) {
-            if context.showsMute { dragHandle }
-        }
+        .overlay(alignment: .top) { dragHandle }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 6) {
-                if !context.showsMute {
-                    HStack(spacing: 2) {
-                        moveButton("chevron.up", enabled: index > 0, offset: -1,
-                                   help: tr("Move this section up", "Mover esta seção para cima"))
-                        moveButton("chevron.down", enabled: index < count - 1, offset: 1,
-                                   help: tr("Move this section down", "Mover esta seção para baixo"))
-                    }
-                }
                 if context.showsMute {
                     // Edge-pinned panel: explicit button to keep the details open.
                     Button { context.onTapSection(kind) } label: {
@@ -159,7 +148,7 @@ private struct SectionHost: View {
                   dragged != kind else { return false }
             model.moveSection(dragged, to: index)
             return true
-        } isTargeted: { dropTargeted = $0 && context.showsMute }
+        } isTargeted: { dropTargeted = $0 }
         .background(GeometryReader { geo in
             Color.clear.preference(key: SectionFramesKey.self, value: [kind: geo.frame(in: .global)])
         })
@@ -183,19 +172,6 @@ private struct SectionHost: View {
             }
             .help(tr("Drag to move this section up or down",
                      "Arraste para mover esta seção para cima ou para baixo"))
-    }
-
-    private func moveButton(_ symbol: String, enabled: Bool, offset: Int, help: String) -> some View {
-        Button { model.moveSection(kind, by: offset) } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.secondary.opacity(enabled ? 0.6 : 0.2))
-                .frame(width: 12, height: 12)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .disabled(!enabled)
-        .help(help)
     }
 }
 
