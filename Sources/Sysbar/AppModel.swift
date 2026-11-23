@@ -119,9 +119,18 @@ final class AppModel {
     }
 
     /// One panel's opacity ("edge" or a section kind).
-    /// Opacity of every panel (Settings and each pinned panel's button).
-    var opacity: Binding<OpacitySet> {
-        Binding(get: { Settings.opacity }, set: { Settings.opacity = $0; self.bump() })
+    /// Opacity of every panel (Settings and the edge panel's button).
+    var opacity: Binding<OpacitySet> { opacity(for: nil) }
+
+    /// A panel's opacity: global, or its own when set to Separate.
+    func opacity(for key: String?) -> Binding<OpacitySet> {
+        Binding(get: { Settings.opacity(for: key) },
+                set: { Settings.setOpacity($0, for: key); self.bump() })
+    }
+
+    func separateOpacity(_ key: String) -> Binding<Bool> {
+        Binding(get: { Settings.isSeparateOpacity(key) },
+                set: { Settings.setSeparateOpacity($0, for: key); self.bump() })
     }
 
     var pinFull: Binding<Bool> {

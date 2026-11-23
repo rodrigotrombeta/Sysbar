@@ -39,7 +39,7 @@ struct DetailContainer: View {
             HStack(spacing: 10) {
                 Text(kind.detailTitle).font(.system(size: 13, weight: .bold))
                 Spacer()
-                if pinned { OpacityButton(model: model) }
+                if pinned { OpacityButton(model: model, key: kind.rawValue) }
                 Button { model.toggleDetailPin(kind) } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
                 }
@@ -69,7 +69,7 @@ struct DetailContainer: View {
         }
         .padding(14)
         .frame(width: detailWidth, alignment: .leading)
-        .panelOpacity()
+        .panelOpacity(kind.rawValue)
     }
 }
 
@@ -634,6 +634,8 @@ struct WindowDragArea: NSViewRepresentable {
 /// global values as in Settings).
 struct OpacityButton: View {
     let model: AppModel
+    /// Detail panel kind (can switch to a Separate opacity); nil = global.
+    var key: String? = nil
     @State private var open = false
 
     var body: some View {
@@ -642,9 +644,17 @@ struct OpacityButton: View {
             .help(tr("Opacity", "Opacidade"))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(tr("Opacity (all panels)", "Opacidade (todos os painéis)"))
-                        .font(.system(size: 12, weight: .semibold))
-                    OpacityControls(value: model.opacity)
+                    Text(tr("Opacity", "Opacidade")).font(.system(size: 12, weight: .semibold))
+                    if let key {
+                        Picker("", selection: model.separateOpacity(key)) {
+                            Text(tr("Sync global", "Global")).tag(false)
+                            Text(tr("This panel only", "Só este painel")).tag(true)
+                        }
+                        .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+                        .help(tr("Sync global: same opacity as every panel (Settings). This panel only: its own opacity, saved.",
+                                 "Global: mesma opacidade de todos os painéis (Configurações). Só este painel: opacidade própria, salva."))
+                    }
+                    OpacityControls(value: model.opacity(for: key))
                 }
                 .padding(12)
                 // The popover is its own window: don't inherit the panel's fading.

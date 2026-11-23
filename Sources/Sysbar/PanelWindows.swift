@@ -114,12 +114,17 @@ final class HostedPanel {
         }
     }
 
+    /// Detail panels: their section kind, for a Separate opacity.
+    var opacityKey: String? {
+        didSet { applyAppearance() }
+    }
+
     func applyAppearance() {
         window.appearance = Settings.appearance.nsAppearance
         // Text and graphics fade inside SwiftUI; only the background view
         // fades here. No shadow once the background is gone (it would
         // outline every glyph).
-        let backgroundOpacity = Settings.opacity.background
+        let backgroundOpacity = Settings.opacity(for: opacityKey).background
         window.alphaValue = 1
         background.alphaValue = backgroundOpacity
         let shadow = backgroundOpacity > 0.05
@@ -344,6 +349,7 @@ final class DetailManager {
             return
         }
         let panel = HostedPanel(DetailContainer(model: model, kind: kind))
+        panel.opacityKey = kind.rawValue
         panel.container.trackWholeView = true
         panel.container.onEnter = { [weak self] _ in
             self?.insideDetail = kind

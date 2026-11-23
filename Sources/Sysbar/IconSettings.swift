@@ -203,6 +203,15 @@ final class SettingsStore {
     var opacity: OpacitySet {
         didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
+    /// Detail panels set to "Separate": their own opacity instead of the
+    /// global one (keys are section kinds).
+    var separateOpacity: Set<String> {
+        didSet { defaults.set(Array(separateOpacity).sorted(), forKey: "separateOpacityPanels") }
+    }
+    /// Each detail panel's own opacity, kept while it's set back to Global.
+    var panelOpacities: [String: OpacitySet] {
+        didSet { defaults.set(try? JSONEncoder().encode(panelOpacities), forKey: "panelOpacitySets") }
+    }
     /// Edge panel spans the whole height of the screen (square corners)
     /// instead of floating at its content height.
     var pinFull: Bool {
@@ -253,9 +262,9 @@ final class SettingsStore {
         // Earlier builds stored a single value ("panelOpacity").
         opacity = d.data(forKey: "opacity").flatMap { try? JSONDecoder().decode(OpacitySet.self, from: $0) }
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
-        // Opacity is global; drop the per-panel values of earlier builds.
-        d.removeObject(forKey: "panelOpacitySets")
-        d.removeObject(forKey: "panelOpacities")
+        separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
+        panelOpacities = d.data(forKey: "panelOpacitySets")
+            .flatMap { try? JSONDecoder().decode([String: OpacitySet].self, from: $0) } ?? [:]
         diskDetailedInIcon = d.bool(forKey: "diskDetailedInIcon")
         pinFull = d.bool(forKey: "pinFull")
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
@@ -365,6 +374,34 @@ enum Settings {
     static var opacity: OpacitySet {
         get { store.opacity }
         set { store.opacity = newValue }
+    }
+
+    /// Opacity a panel uses: its own if set to Separate, else the global one
+    /// (key nil = main/edge panel, always global).
+    static func opacity(for key: String?) -> OpacitySet {
+        guard let key, store.separateOpacity.contains(key) else { return store.opacity }
+        return store.panelOpacities[key] ?? store.opacity
+    }
+
+    /// Writes where `opacity(for:)` reads from.
+    static func setOpacity(_ value: OpacitySet, for key: String?) {
+        if let key, store.separateOpacity.contains(key) {
+            store.panelOpacities[key] = value
+        } else {
+            store.opacity = value
+        }
+    }
+
+    static func isSeparateOpacity(_ key: String) -> Bool { store.separateOpacity.contains(key) }
+
+    /// Separate starts from the panel's last own values, or the global ones.
+    static func setSeparateOpacity(_ on: Bool, for key: String) {
+        if on {
+            if store.panelOpacities[key] == nil { store.panelOpacities[key] = store.opacity }
+            store.separateOpacity.insert(key)
+        } else {
+            store.separateOpacity.remove(key)
+        }
     }
 
     static var language: Language {
