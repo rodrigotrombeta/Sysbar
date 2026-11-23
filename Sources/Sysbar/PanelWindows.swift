@@ -166,7 +166,25 @@ final class MainPanelController {
            let pinned = NSScreen.screens.first(where: { $0.displayID == id }) {
             return pinned
         }
+        if placement == .popover, let clickAnchor, NSScreen.screens.contains(clickAnchor.screen) {
+            return clickAnchor.screen
+        }
         return panel.window.screen ?? statusButton()?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    /// Display and x position of the menu bar click that opened the popover.
+    /// With several displays each has its own menu bar, and the status item
+    /// window may sit on another one, so the click decides where it opens.
+    private var clickAnchor: (screen: NSScreen, midX: CGFloat)?
+
+    func anchorToClick() {
+        guard let screen = NSScreen.underMouse else { clickAnchor = nil; return }
+        var midX = NSEvent.mouseLocation.x
+        if let button = statusButton()?.window?.frame,
+           screen.frame.contains(NSPoint(x: button.midX, y: button.midY)) {
+            midX = button.midX
+        }
+        clickAnchor = (screen, midX)
     }
 
     func show() {
@@ -188,7 +206,10 @@ final class MainPanelController {
         var frame = NSRect(origin: .zero, size: size)
         switch placement {
         case .popover:
-            if let buttonFrame = statusButton()?.window?.frame {
+            if let clickAnchor, NSScreen.screens.contains(clickAnchor.screen) {
+                frame.origin.x = clickAnchor.midX - size.width / 2
+                frame.origin.y = visible.maxY - 6 - size.height
+            } else if let buttonFrame = statusButton()?.window?.frame {
                 frame.origin.x = buttonFrame.midX - size.width / 2
                 frame.origin.y = buttonFrame.minY - 6 - size.height
             } else {

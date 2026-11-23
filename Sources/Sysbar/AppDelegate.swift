@@ -168,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openPopover() {
         model.processes = processSampler.sample()
+        popover.anchorToClick()
         fitPanels()
         NSApp.activate(ignoringOtherApps: true)
         popover.show()
