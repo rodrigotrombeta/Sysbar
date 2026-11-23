@@ -501,6 +501,8 @@ struct ProcessList: View {
     let rows: [ProcessRow]
     let metric: ProcessMetric
     let total: UInt64
+    /// Narrow main panel: no bar, so names have room next to two columns.
+    var compact = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -517,18 +519,28 @@ struct ProcessList: View {
                 HStack(spacing: 8) {
                     Text(row.name).font(.system(size: 11.5)).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.primary.opacity(0.08))
-                            Capsule().fill(metric == .memory ? Color(nsColor: MemoryPalette.app) : blue)
-                                .frame(width: max(2, geo.size.width * CGFloat(min(1, fraction))))
+                    if !compact {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.primary.opacity(0.08))
+                                Capsule().fill(metric == .memory ? Color(nsColor: MemoryPalette.app) : blue)
+                                    .frame(width: max(2, geo.size.width * CGFloat(min(1, fraction))))
+                            }
                         }
+                        .frame(width: 60, height: 5)
                     }
-                    .frame(width: 60, height: 5)
                     Text(metric == .memory ? bytes(row.memoryBytes)
                                            : String(format: "%.1f%%", row.cpu * 100))
                         .font(.system(size: 11.5).monospacedDigit())
-                        .frame(width: 70, alignment: .trailing)
+                        .frame(width: metric == .memory ? 62 : 70, alignment: .trailing)
+                    if metric == .memory {
+                        // Share of physical memory (RAM).
+                        Text(String(format: "%.1f%%", Double(row.memoryBytes) / Double(max(1, total)) * 100))
+                            .font(.system(size: 11.5).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                            .help(tr("Share of total RAM", "Parcela do total de RAM"))
+                    }
                 }
             }
         }

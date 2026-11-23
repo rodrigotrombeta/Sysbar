@@ -187,7 +187,7 @@ struct TopProcessesPanel: View {
                 .kerning(1)
                 .foregroundStyle(Color(nsColor: .systemBlue))
                 .frame(maxWidth: .infinity, alignment: .center)
-            ProcessList(rows: rows, metric: .memory, total: total)
+            ProcessList(rows: rows, metric: .memory, total: total, compact: true)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
