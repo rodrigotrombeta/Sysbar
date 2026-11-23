@@ -4,3 +4,4 @@ build/
 .swiftpm/
 dist/
 sysbar-demo.mp4
+!docs/sysbar-demo.mp4

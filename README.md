@@ -13,7 +13,7 @@ Available in **English** and **Portuguese**.
 <p align="center">
   <a href="docs/sysbar-demo.mp4"><img src="docs/images/demo.gif" width="800"
      alt="Sysbar demo: animated menu bar icon, main panel and pinned detail panels"></a>
-  <br><sub>▶︎ Click for the full-quality <a href="docs/sysbar-demo.mp4">demo video (MP4)</a>.</sub>
+  <br><sub>▶︎ Click for the full-quality <a href="docs/sysbar-demo.mp4">demo video (MP4, with sound)</a>.</sub>
 </p>
 
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
@@ -188,7 +188,7 @@ Dark) · ⚙︎ settings · quit.
 | Setting | Options |
 |---|---|
 | **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. Drag the ≡ handle to reorder them: top to bottom in the list = left to right in the menu bar. |
-| Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, I/O (page-ins/outs). Disk: pie, bar, percentage, I/O (read/write). Network: I/O chart (download/upload) or speed text. |
+| Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, used / free (GB), I/O (page-ins/outs). Disk: pie, bar, percentage, used / free (GB), I/O (read/write). Network: I/O chart (download/upload) or speed text. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
 | General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Pinned panel (Float / Full height), Opacity (Background / Text / Graphics, or Sync opacity), Open at login (needs the app in `/Applications`). |

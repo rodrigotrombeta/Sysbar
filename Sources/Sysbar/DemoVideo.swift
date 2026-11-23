@@ -1,34 +1,64 @@
 // `Sysbar --demo-frames <dir>` renders a short promo animation as PNG
-// frames from live samples of this Mac (encode them with ffmpeg; see
-// scripts/demo-video.sh). The real SwiftUI panels are drawn in an
-// off-screen window, so what you see is what the app shows.
+// frames (DemoVideo.fps per second) from live samples of this Mac; encode
+// them with ffmpeg (scripts/demo-video.sh, scripts/readme-media.sh). The
+// real SwiftUI panels are drawn in an off-screen window, so what you see is
+// what the app shows. Wallpapers are drawn here (no image files).
 
 import AppKit
 import SwiftUI
 
 @MainActor
 final class DemoState: ObservableObject {
-    enum Scene: Int { case intro, styles, panel, memory, outro }
+    enum Scene: Int { case intro, styles, panel, opacity, disk, memory, outro }
     @Published var scene: Scene = .intro
     @Published var fade: Double = 1
+    /// 0...1 through the current scene.
+    @Published var progress: Double = 0
     @Published var icon = NSImage()
+    @Published var diskIcon = NSImage()
     @Published var styleIcons: [(String, NSImage)] = []
+    /// Wallpaper crossfade: current one, the next one and the blend to it.
+    @Published var wallpaper = 0
+    @Published var nextWallpaper = 1
+    @Published var wallpaperBlend: Double = 0
+    @Published var caption = ""
 }
 
 @MainActor
 enum DemoVideo {
     static let size = NSSize(width: 1440, height: 810)
-    static let fps = 4.0
+    static let fps = 12.0
+    /// Live samples per second (charts scroll at this pace).
+    static let samplesPerSecond = 4.0
     /// Scene lengths in seconds.
     static let timeline: [(DemoState.Scene, Double)] = [
-        (.intro, 5), (.styles, 5), (.panel, 10), (.memory, 7), (.outro, 4),
+        (.intro, 4), (.styles, 4), (.panel, 6), (.opacity, 11), (.disk, 9), (.memory, 6), (.outro, 4),
     ]
 
     static func render(to dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let savedLanguage = Settings.language
+        // Settings the scenes change; restored at the end.
+        let store = SettingsStore.shared
+        let saved = (Settings.language, store.opacity, store.separateOpacity, store.pinFull, store.pinSide,
+                     store.diskDetailedInIcon)
+        let defaults = UserDefaults.standard
+        let savedDisk = (defaults.object(forKey: "diskChartStyle"), defaults.object(forKey: "diskPieDetailed"))
         Settings.language = .english
-        defer { Settings.language = savedLanguage }
+        store.opacity = OpacitySet()
+        store.separateOpacity = []
+        store.pinFull = true
+        defaults.set("pie", forKey: "diskChartStyle")
+        defaults.set(false, forKey: "diskPieDetailed")
+        defer {
+            Settings.language = saved.0
+            store.opacity = saved.1
+            store.separateOpacity = saved.2
+            store.pinFull = saved.3
+            store.pinSide = saved.4
+            store.diskDetailedInIcon = saved.5
+            defaults.set(savedDisk.0, forKey: "diskChartStyle")
+            defaults.set(savedDisk.1, forKey: "diskPieDetailed")
+        }
 
         let load = CPULoad()
         load.start()
@@ -60,6 +90,9 @@ enum DemoVideo {
             return p.anonymized()
         }
 
+        // Disk breakdown for the disk scene (measured once, shown later).
+        let breakdown = DiskBreakdown.measure()
+
         // Pre-roll so the history charts start full.
         for i in 0..<60 {
             pump(0.25)
@@ -68,27 +101,74 @@ enum DemoVideo {
         }
 
         var frame = 0
+        let framesPerSample = max(1, Int((fps / samplesPerSecond).rounded()))
         for (scene, seconds) in timeline {
             let count = Int(seconds * fps)
             state.scene = scene
-            model.pinnedDetails = scene == .panel ? [.cpu, .gpu] : scene == .memory ? [.memory, .disk] : []
+            model.pinnedDetails = scene == .panel ? [.cpu, .gpu] : []
             for i in 0..<count {
                 autoreleasepool {
-                    model.snapshot = sampler.sample().anonymized()
-                    if i % 4 == 0 { model.processes = sampleProcesses() }
-                    state.fade = min(1, Double(i + 1) / 3)
-                    updateIcons(state, snapshot: model.snapshot, appearance: appearance)
-                    pump(0.02)
+                    let t = Double(i) / Double(count)
+                    let time = Double(i) / fps
+                    if i % framesPerSample == 0 {
+                        model.snapshot = sampler.sample().anonymized()
+                        if i % (framesPerSample * 4) == 0 { model.processes = sampleProcesses() }
+                    }
+                    state.progress = t
+                    state.fade = min(1, time / 0.3)
+                    animate(scene, time: time, seconds: seconds, state: state, model: model,
+                            breakdown: breakdown)
+                    updateIcons(state, snapshot: model.snapshot, model: model, appearance: appearance)
+                    pump(0.01)
                     host.layoutSubtreeIfNeeded()
                     save(host, to: dir.appendingPathComponent(String(format: "f%05d.png", frame)))
                 }
                 frame += 1
-                pump(max(0.05, 1 / fps - 0.1))
+                pump(max(0.005, 1 / fps - 0.06))
             }
         }
         load.stop()
         window.orderOut(nil)
         print("Wrote \(frame) frames to \(dir.path)")
+    }
+
+    /// Per-frame changes of the opacity and disk scenes.
+    private static func animate(_ scene: DemoState.Scene, time: Double, seconds: Double,
+                                state: DemoState, model: AppModel, breakdown: DiskBreakdown?) {
+        func ramp(_ from: Double, _ to: Double) -> Double { min(1, max(0, (time - from) / (to - from))) }
+        switch scene {
+        case .opacity:
+            // Bright wallpapers, then a dark one where the background fades
+            // to 0 % while text and graphics stay at 100 %.
+            if time < 2.5 {
+                state.wallpaper = 1; state.nextWallpaper = 0; state.wallpaperBlend = ramp(1.5, 2.5)
+            } else {
+                state.wallpaper = 0; state.nextWallpaper = 3; state.wallpaperBlend = ramp(2.5, 3.5)
+            }
+            var o = OpacitySet()
+            o.background = 1 - ramp(4, 6.5)
+            Settings.opacity = o
+            state.caption = time < 3.5 ? "Pin it full height…"
+                : time < 6.5 ? "…fade the background to 0 %…"
+                : time < 8.5 ? "…text and charts stay at 100 %."
+                : "Background, text and graphics opacity."
+        case .disk:
+            let detailed = time >= 2.5
+            if UserDefaults.standard.bool(forKey: "diskPieDetailed") != detailed {
+                UserDefaults.standard.set(detailed, forKey: "diskPieDetailed")
+            }
+            model.diskBreakdown = time >= 5 ? breakdown : nil
+            if Settings.diskDetailedInIcon != (time >= 6) { Settings.diskDetailedInIcon = time >= 6 }
+            model.measuringDisk = detailed && time < 5
+            state.caption = time < 2.5 ? "Disk usage as a pie…"
+                : time < 5 ? "…measure the details…"
+                : "…and see them in the menu bar too."
+        default:
+            if Settings.opacity != OpacitySet() { Settings.opacity = OpacitySet() }
+            state.wallpaper = 0
+            state.nextWallpaper = 1
+            state.wallpaperBlend = 0
+        }
     }
 
     private static func pump(_ seconds: TimeInterval) {
@@ -103,11 +183,19 @@ enum DemoVideo {
             showLabel: true)
     }
 
-    private static func updateIcons(_ state: DemoState, snapshot: SystemStatsSnapshot, appearance: NSAppearance) {
-        let main = config([(.cpu, .line, .metric), (.gpu, .bar, .metric), (.memory, .pie, .metric),
-                           (.disk, .io, .monochrome), (.network, .speed, .monochrome)])
+    private static func updateIcons(_ state: DemoState, snapshot: SystemStatsSnapshot, model: AppModel,
+                                    appearance: NSAppearance) {
+        let diskSegments = state.scene == .disk ? model.diskBreakdown?.iconSegments : nil
+        var main = config([(.cpu, .line, .metric), (.gpu, .bar, .metric), (.memory, .pie, .metric),
+                           (.disk, .pie, .metric), (.network, .speed, .monochrome)])
+        main.diskSegments = diskSegments
         state.icon = rasterize(StatusIconRenderer.image(snapshot: snapshot, config: main, appearance: appearance),
                                appearance: appearance)
+        var disk = config([(.disk, .pie, .metric)])
+        disk.diskSegments = diskSegments
+        state.diskIcon = rasterize(StatusIconRenderer.image(snapshot: snapshot, config: disk, appearance: appearance),
+                                   appearance: appearance)
+        guard state.scene == .styles || state.styleIcons.isEmpty else { return }
         let variants: [(String, IconMetric, IconStyle, IconColorMode)] = [
             ("CPU · line", .cpu, .line, .metric),
             ("CPU · bar", .cpu, .bar, .utilization),
@@ -195,6 +283,49 @@ final class CPULoad: @unchecked Sendable {
 
 private let accent = Color(red: 0.36, green: 0.85, blue: 0.55)
 
+/// Abstract wallpapers drawn with gradients.
+private struct Wallpaper: View {
+    let index: Int
+
+    var body: some View {
+        switch index % 4 {
+        case 0:
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.10, green: 0.12, blue: 0.35), Color(red: 0.45, green: 0.15, blue: 0.55)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle().fill(Color(red: 0.95, green: 0.45, blue: 0.75).opacity(0.55))
+                    .frame(width: 700).blur(radius: 120).offset(x: 380, y: -200)
+                Circle().fill(Color(red: 0.25, green: 0.65, blue: 1).opacity(0.5))
+                    .frame(width: 600).blur(radius: 120).offset(x: -420, y: 260)
+            }
+        case 1:
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.98, green: 0.62, blue: 0.30), Color(red: 0.80, green: 0.22, blue: 0.35),
+                                        Color(red: 0.25, green: 0.10, blue: 0.30)],
+                               startPoint: .top, endPoint: .bottom)
+                Circle().fill(Color(red: 1, green: 0.85, blue: 0.45).opacity(0.7))
+                    .frame(width: 380).blur(radius: 40).offset(x: -250, y: 120)
+            }
+        case 3:
+            // Dark: lets text and charts without a background stand out.
+            ZStack {
+                Color(red: 0.03, green: 0.03, blue: 0.06)
+                Circle().fill(Color(red: 0.20, green: 0.15, blue: 0.45).opacity(0.35))
+                    .frame(width: 900).blur(radius: 180).offset(x: -350, y: 200)
+            }
+        default:
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.02, green: 0.25, blue: 0.28), Color(red: 0.05, green: 0.55, blue: 0.45)],
+                               startPoint: .bottomLeading, endPoint: .topTrailing)
+                Circle().fill(Color(red: 0.55, green: 1, blue: 0.75).opacity(0.35))
+                    .frame(width: 800).blur(radius: 140).offset(x: -300, y: -250)
+                Circle().fill(Color(red: 0.1, green: 0.4, blue: 0.9).opacity(0.45))
+                    .frame(width: 600).blur(radius: 120).offset(x: 450, y: 250)
+            }
+        }
+    }
+}
+
 private struct DemoSceneView: View {
     let model: AppModel
     @ObservedObject var state: DemoState
@@ -204,12 +335,19 @@ private struct DemoSceneView: View {
             LinearGradient(colors: [Color(red: 0.07, green: 0.08, blue: 0.12),
                                     Color(red: 0.12, green: 0.10, blue: 0.20)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
+            if state.scene == .opacity {
+                Wallpaper(index: state.wallpaper)
+                Wallpaper(index: state.nextWallpaper).opacity(state.wallpaperBlend)
+            }
             Group {
                 switch state.scene {
                 case .intro: intro
                 case .styles: styles
                 case .panel: panelScene(details: [.cpu, .gpu], caption: "Hover a section for details.\nClick to keep them open.")
-                case .memory: panelScene(details: [.memory, .disk], caption: "Memory pressure,\nswap, disk I/O\nand more.")
+                case .opacity: opacityScene
+                case .disk: diskScene
+                case .memory: panelScene(details: [.memory, .processes],
+                                         caption: "Memory by type,\nand each process'\nshare of RAM.")
                 case .outro: outro
                 }
             }
@@ -264,24 +402,30 @@ private struct DemoSceneView: View {
         }
     }
 
-    private func card<V: View>(_ content: V) -> some View {
+    /// A panel as the app draws it; `background` < 1 fades only its backdrop.
+    private func card<V: View>(_ content: V, background: Double = 1, corner: CGFloat = 12) -> some View {
         content
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .windowBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12)))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
+            .background(RoundedRectangle(cornerRadius: corner)
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(background)))
+            .overlay(RoundedRectangle(cornerRadius: corner).stroke(Color.white.opacity(0.12 * background)))
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .shadow(color: .black.opacity(0.45 * background), radius: 18, y: 8)
+    }
+
+    private func captionText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 26, weight: .semibold))
+            .foregroundStyle(.white)
+            .lineSpacing(6)
+            .shadow(color: .black.opacity(0.5), radius: 6)
+            .frame(width: 290, alignment: .leading)
     }
 
     private func panelScene(details: [SystemStatKind], caption: String) -> some View {
         VStack(spacing: 0) {
             menuBar
             HStack(alignment: .top, spacing: 12) {
-                Text(caption)
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineSpacing(6)
-                    .frame(width: 270, alignment: .leading)
-                    .padding(.top, 40)
+                captionText(caption).padding(.top, 40)
                 Spacer(minLength: 0)
                 ForEach(details, id: \.self) { kind in
                     card(DetailContainer(model: model, kind: kind))
@@ -294,12 +438,57 @@ private struct DemoSceneView: View {
         }
     }
 
+    /// Full-height edge panel and two details over changing wallpapers,
+    /// with the background (then the text) fading out.
+    private var opacityScene: some View {
+        let edge = PanelContext()
+        edge.showsMute = true
+        let bg = Settings.opacity.background
+        return VStack(spacing: 0) {
+            menuBar
+            HStack(alignment: .top, spacing: 14) {
+                captionText(state.caption).padding(.top, 60).padding(.leading, 30)
+                Spacer(minLength: 0)
+                VStack(spacing: 14) {
+                    card(DetailContainer(model: model, kind: .network), background: bg)
+                    card(DetailContainer(model: model, kind: .disk), background: bg)
+                }
+                .padding(.top, 20)
+                card(MainPanelView(model: model, context: edge), background: bg, corner: 0)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+    }
+
+    private var diskScene: some View {
+        VStack(spacing: 0) {
+            menuBar
+            HStack(alignment: .center, spacing: 40) {
+                VStack(alignment: .leading, spacing: 30) {
+                    captionText(state.caption)
+                    HStack(spacing: 14) {
+                        Image(nsImage: state.diskIcon)
+                            .resizable().interpolation(.high)
+                            .frame(width: state.diskIcon.size.width * 3.2, height: state.diskIcon.size.height * 3.2)
+                            .padding(16)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.5)))
+                        Text("menu bar icon").font(.system(size: 15)).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                card(DetailContainer(model: model, kind: .disk))
+                    .scaleEffect(1.4)
+                    .frame(width: 560)
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+
     private var outro: some View {
         VStack(spacing: 22) {
             Text("Sysbar").font(.system(size: 64, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text("Free & open source · ~1 MB · ~30 MB RAM · macOS 14+")
+            Text("Free & open source · ~1.5 MB · ~35 MB RAM · macOS 14+")
                 .font(.system(size: 24, weight: .medium)).foregroundStyle(.white.opacity(0.8))
-            Text("Pin it to a screen edge · English / Português · Light / Dark")
+            Text("Pin float or full height · Opacity · Disk breakdown · English / Português")
                 .font(.system(size: 20)).foregroundStyle(.white.opacity(0.6))
             Text("github.com/rodrigotrombeta/Sysbar")
                 .font(.system(size: 30, weight: .semibold, design: .monospaced)).foregroundStyle(accent)
