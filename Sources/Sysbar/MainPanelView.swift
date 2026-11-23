@@ -50,6 +50,7 @@ struct MainPanelView: View {
         // "Pin full": the edge window spans the screen height; keep the
         // content at the top.
         .frame(maxHeight: context.showsMute && Settings.pinFull ? .infinity : nil, alignment: .top)
+        .panelOpacity(context.showsMute ? "edge" : nil)
         .onPreferenceChange(SectionFramesKey.self) { context.onSectionFrames($0) }
     }
 
@@ -104,6 +105,7 @@ private struct SectionHost: View {
                         Image(systemName: pinned ? "pin.fill" : "pin")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(pinned ? Color.accentColor : Color.secondary.opacity(0.5))
+                            .textLayer()
                             .frame(width: 14, height: 12)
                             .contentShape(Rectangle())
                     }
@@ -115,6 +117,7 @@ private struct SectionHost: View {
                         Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(muted ? Color.accentColor : Color.secondary.opacity(0.5))
+                            .textLayer()
                             .frame(width: 14, height: 12)
                             .contentShape(Rectangle())
                     }
@@ -127,6 +130,7 @@ private struct SectionHost: View {
                 Image(systemName: pinBadge ? "pin.fill" : "chevron.left.2")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(pinBadge ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .textLayer()
                     .help(tr("Hover for details · click to keep them open",
                              "Passe o mouse para ver detalhes · clique para fixá-los"))
             }
@@ -189,6 +193,7 @@ struct TopProcessesPanel: View {
                 .font(.system(size: StatsTheme.caption, weight: .bold))
                 .kerning(1)
                 .foregroundStyle(Color(nsColor: .systemBlue))
+                .textLayer()
                 .frame(maxWidth: .infinity, alignment: .center)
             ProcessList(rows: rows, metric: .memory, total: total, compact: true)
         }
@@ -223,6 +228,7 @@ private struct PanelHeader: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .textLayer()
             .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
 
             if showsMute {
@@ -231,6 +237,7 @@ private struct PanelHeader: View {
                 Button(action: model.toggleMuteAll) {
                     Image(systemName: allMuted ? "speaker.slash.fill" : "speaker.slash")
                         .foregroundStyle(allMuted ? Color.accentColor : Color.primary)
+                        .textLayer()
                 }
                 .help(allMuted ? tr("Unmute all: show details on hover", "Reativar tudo: mostrar detalhes ao passar o mouse")
                                : tr("Mute all: don't show details on hover", "Silenciar tudo: não mostrar detalhes ao passar o mouse"))
@@ -377,17 +384,9 @@ private struct SettingsView: View {
                 .help(tr("Float: the pinned panel floats at its content height. Full height: it fills the whole side of the screen.",
                          "Flutuante: o painel fixado flutua com a altura do conteúdo. Altura toda: ocupa a lateral inteira da tela."))
             }
-            LabeledContent(tr("Opacity", "Opacidade")) {
-                HStack(spacing: 6) {
-                    Slider(value: model.panelOpacity, in: 0.3...1, step: 0.05)
-                        .controlSize(.small)
-                        .frame(width: 120)
-                    Text("\(Int((Settings.panelOpacity * 100).rounded()))%")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 34, alignment: .trailing)
-                }
-            }
+            Text(tr("Opacity", "Opacidade")).font(.system(size: 12))
+            OpacityControls(value: model.opacity(for: nil))
+                .padding(.leading, 8)
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)
 

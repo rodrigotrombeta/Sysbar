@@ -3,6 +3,58 @@
 
 import SwiftUI
 
+// MARK: - Opacity layers
+
+private struct TextOpacityKey: EnvironmentKey { static let defaultValue = 1.0 }
+private struct GraphicsOpacityKey: EnvironmentKey { static let defaultValue = 1.0 }
+
+extension EnvironmentValues {
+    /// Opacity of text and icons in a panel (see `OpacitySet`).
+    var textOpacity: Double {
+        get { self[TextOpacityKey.self] }
+        set { self[TextOpacityKey.self] = newValue }
+    }
+    /// Opacity of charts, bars and pies in a panel.
+    var graphicsOpacity: Double {
+        get { self[GraphicsOpacityKey.self] }
+        set { self[GraphicsOpacityKey.self] = newValue }
+    }
+}
+
+/// Root of a panel's content: text in the default (hierarchical) styles
+/// fades through the foreground style; explicitly colored text uses
+/// `.textLayer()`, charts `.graphicsLayer()`.
+private struct PanelOpacityModifier: ViewModifier {
+    let key: String?
+    func body(content: Content) -> some View {
+        let o = Settings.opacity(for: key)
+        content
+            .foregroundStyle(Color.primary.opacity(o.text))
+            .environment(\.textOpacity, o.text)
+            .environment(\.graphicsOpacity, o.graphics)
+    }
+}
+
+private struct TextLayer: ViewModifier {
+    @Environment(\.textOpacity) private var opacity
+    func body(content: Content) -> some View { content.opacity(opacity) }
+}
+
+private struct GraphicsLayer: ViewModifier {
+    @Environment(\.graphicsOpacity) private var opacity
+    func body(content: Content) -> some View { content.opacity(opacity) }
+}
+
+extension View {
+    /// Applies a panel's text and graphics opacity ("edge", a section kind,
+    /// or nil for the global values).
+    func panelOpacity(_ key: String?) -> some View { modifier(PanelOpacityModifier(key: key)) }
+    /// Text with its own color (not faded by the foreground style).
+    func textLayer() -> some View { modifier(TextLayer()) }
+    /// Charts, bars and pies.
+    func graphicsLayer() -> some View { modifier(GraphicsLayer()) }
+}
+
 /// A history chart with a labelled grid (0 / 25 / 50 / 75 / 100 % of max),
 /// newest sample on the right — like Activity Monitor / iStat Menus.
 struct HistoryChart: View {
@@ -54,6 +106,7 @@ struct HistoryChart: View {
                         .stroke(s.color, style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
                 }
             }
+            .graphicsLayer()
         }
         .frame(height: height)
         .padding(.vertical, 6)
@@ -102,6 +155,7 @@ struct StackedHistoryChart: View {
                         .stroke(layers[i].color, style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
                 }
             }
+            .graphicsLayer()
         }
         .frame(height: height)
         .padding(.vertical, 6)
@@ -168,6 +222,7 @@ struct DonutChart: View {
                     .rotationEffect(.degrees(-90))
             }
         }
+        .graphicsLayer()
         .padding(lineWidth / 2)
     }
 
@@ -188,7 +243,7 @@ struct LegendDot: View {
     let label: String
     var body: some View {
         HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 9, height: 9)
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 9, height: 9).graphicsLayer()
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
         }
     }
@@ -255,6 +310,7 @@ struct MeterRow: View {
                 }
             }
             .frame(height: 6)
+            .graphicsLayer()
         }
     }
 }
@@ -270,6 +326,7 @@ struct InfoRow: View {
             Text(label).font(.system(size: 12)).foregroundStyle(.secondary)
             Spacer(minLength: 4)
             Text(value).font(.system(size: 12).monospacedDigit()).foregroundStyle(valueColor)
+                .textLayer()
                 .lineLimit(1)
         }
     }
@@ -294,5 +351,6 @@ struct MiniChart: View {
                 .stroke(color, lineWidth: 1)
         }
         .background(RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(0.05)))
+        .graphicsLayer()
     }
 }

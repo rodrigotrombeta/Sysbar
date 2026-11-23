@@ -53,6 +53,7 @@ struct MetricSparkline: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
         }
         .frame(height: height)
+        .graphicsLayer()
         .accessibilityHidden(true)
     }
 }

@@ -65,6 +65,9 @@ final class HostedPanel {
     let window: KeyPanel
     let container = TrackingContainer()
     private let host: NSView
+    /// The panel's background, a sibling *behind* the content, so fading
+    /// it leaves the text and charts as they are.
+    private let background = NSVisualEffectView()
 
     init<V: View>(_ view: V) {
         let host = FirstMouseHostingView(rootView: view)
@@ -81,7 +84,7 @@ final class HostedPanel {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
 
-        let effect = NSVisualEffectView()
+        let effect = background
         effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
@@ -93,7 +96,7 @@ final class HostedPanel {
         container.wantsLayer = true
         container.layer?.cornerRadius = cornerRadius
         container.addSubview(effect)
-        effect.addSubview(host)
+        container.addSubview(host)
         window.contentView = container
         applyAppearance()
     }
@@ -106,7 +109,7 @@ final class HostedPanel {
         didSet {
             guard cornerRadius != oldValue else { return }
             container.layer?.cornerRadius = cornerRadius
-            container.subviews.first?.layer?.cornerRadius = cornerRadius
+            background.layer?.cornerRadius = cornerRadius
             window.invalidateShadow()
         }
     }
@@ -119,13 +122,21 @@ final class HostedPanel {
 
     func applyAppearance() {
         window.appearance = Settings.appearance.nsAppearance
-        window.alphaValue = Settings.opacity(for: opacityKey)
+        // Text and graphics fade inside SwiftUI; only the background view
+        // fades here. No shadow once the background is gone (it would
+        // outline every glyph).
+        let backgroundOpacity = Settings.opacity(for: opacityKey).background
+        window.alphaValue = 1
+        background.alphaValue = backgroundOpacity
+        let shadow = backgroundOpacity > 0.05
+        if window.hasShadow != shadow { window.hasShadow = shadow }
+        window.invalidateShadow()
     }
 
     func setFrame(_ frame: NSRect) {
         guard frame != window.frame else { return }
         window.setFrame(frame, display: true)
-        container.subviews.first?.frame = container.bounds
+        background.frame = container.bounds
         host.frame = container.bounds
     }
 

@@ -69,6 +69,7 @@ struct DetailContainer: View {
         }
         .padding(14)
         .frame(width: detailWidth, alignment: .leading)
+        .panelOpacity(kind.rawValue)
     }
 }
 
@@ -248,7 +249,7 @@ private struct MemoryDetail: View {
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                 Spacer()
                 Text(tr("Pressure: ", "Pressão: ")).font(.system(size: 12)).foregroundStyle(.secondary)
-                Text(pressure.0).font(.system(size: 12, weight: .semibold)).foregroundStyle(pressure.1)
+                Text(pressure.0).font(.system(size: 12, weight: .semibold)).foregroundStyle(pressure.1).textLayer()
             }
             Grid(horizontalSpacing: 14, verticalSpacing: 8) {
                 GridRow {
@@ -525,7 +526,7 @@ private struct AllProcessesNote: View {
                     note(tr("Processes of other users (e.g. WindowServer) need admin rights and aren't listed.",
                             "Processos de outros usuários (ex.: WindowServer) exigem permissão de administrador e não aparecem."))
                     if case .failed(let message) = model.allProcesses, !message.isEmpty {
-                        Text(message).font(.system(size: 10)).foregroundStyle(red)
+                        Text(message).font(.system(size: 10)).foregroundStyle(red).textLayer()
                     }
                 }
                 Button(tr("Admin rights…", "Permissão de admin…")) { model.showAllProcesses(true) }
@@ -577,6 +578,7 @@ struct ProcessList: View {
                             }
                         }
                         .frame(width: 60, height: 5)
+                        .graphicsLayer()
                     }
                     Text(metric == .memory ? bytes(row.memoryBytes)
                                            : String(format: "%.1f%%", row.cpu * 100))
@@ -640,22 +642,67 @@ struct OpacityButton: View {
             .help(tr("Opacity of this panel", "Opacidade deste painel"))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(tr("Opacity", "Opacidade")).font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Text("\(Int((Settings.opacity(for: key) * 100).rounded()))%")
-                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    Text(tr("Opacity of this panel", "Opacidade deste painel"))
+                        .font(.system(size: 12, weight: .semibold))
+                    OpacityControls(value: model.opacity(for: key))
+                    if Settings.hasOwnOpacity(key) {
+                        Button(tr("Use the default (Settings)", "Usar o padrão (Configurações)")) {
+                            model.resetOpacity(for: key)
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
                     }
-                    Slider(value: model.opacity(for: key), in: 0.3...1, step: 0.05)
-                        .controlSize(.small)
-                        .frame(width: 170)
-                    Button(tr("Use the default (Settings)", "Usar o padrão (Configurações)")) {
-                        model.resetOpacity(for: key)
-                    }
-                    .buttonStyle(.link)
-                    .font(.system(size: 11))
                 }
                 .padding(12)
+                // The popover is its own window: don't inherit the panel's fading.
+                .foregroundStyle(Color.primary)
+                .environment(\.textOpacity, 1)
+                .environment(\.graphicsOpacity, 1)
             }
+    }
+}
+
+/// "Sync opacity" + one slider, or separate Background / Text / Graphics
+/// sliders.
+struct OpacityControls: View {
+    @Binding var value: OpacitySet
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(tr("Sync opacity", "Sincronizar opacidade"), isOn: Binding(
+                get: { value.sync },
+                set: { on in
+                    var v = value
+                    v.sync = on
+                    if on { v = OpacitySet(all: max(v.background, v.text, v.graphics)); v.sync = true }
+                    value = v
+                }))
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11))
+            if value.sync {
+                row(tr("All", "Tudo"), Binding(
+                    get: { value.background },
+                    set: { var v = OpacitySet(all: $0); v.sync = true; value = v }),
+                    OpacitySet.syncRange)
+            } else {
+                row(tr("Background", "Fundo"), $value.background, OpacitySet.backgroundRange)
+                row(tr("Text", "Texto"), $value.text, OpacitySet.contentRange)
+                row(tr("Graphics", "Gráficos"), $value.graphics, OpacitySet.contentRange)
+            }
+        }
+    }
+
+    private func row(_ label: String, _ binding: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.system(size: 11)).frame(width: 68, alignment: .leading)
+            // Rounded to 5% steps without the stepped slider's tick marks.
+            Slider(value: Binding(get: { binding.wrappedValue },
+                                  set: { binding.wrappedValue = ($0 * 20).rounded() / 20 }),
+                   in: range)
+                .controlSize(.small).frame(width: 110)
+            Text("\(Int((binding.wrappedValue * 100).rounded()))%")
+                .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .trailing)
+        }
     }
 }

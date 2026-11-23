@@ -199,9 +199,9 @@ final class SettingsStore {
     var appearance: AppAppearance {
         didSet { defaults.set(appearance.rawValue, forKey: "appAppearance") }
     }
-    /// Opacity of every Sysbar panel, 0.3...1.
-    var panelOpacity: Double {
-        didSet { defaults.set(panelOpacity, forKey: "panelOpacity") }
+    /// Opacity of every Sysbar panel (background, text, graphics).
+    var opacity: OpacitySet {
+        didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
     /// Edge panel spans the whole height of the screen (square corners)
     /// instead of floating at its content height.
@@ -212,9 +212,9 @@ final class SettingsStore {
     var diskDetailedInIcon: Bool {
         didSet { defaults.set(diskDetailedInIcon, forKey: "diskDetailedInIcon") }
     }
-    /// Per-panel overrides of `panelOpacity` ("edge" or a section kind).
-    var panelOpacities: [String: Double] {
-        didSet { defaults.set(panelOpacities, forKey: "panelOpacities") }
+    /// Per-panel overrides of `opacity` ("edge" or a section kind).
+    var panelOpacities: [String: OpacitySet] {
+        didSet { defaults.set(try? JSONEncoder().encode(panelOpacities), forKey: "panelOpacitySets") }
     }
     var language: Language {
         didSet { defaults.set(language.rawValue, forKey: "language") }
@@ -254,8 +254,12 @@ final class SettingsStore {
         colorModes = d.dictionary(forKey: "iconColorModes") as? [String: String] ?? [:]
         showLabel = d.object(forKey: "iconShowLabel") as? Bool ?? true
         appearance = d.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system
-        panelOpacity = min(1, max(0.3, d.object(forKey: "panelOpacity") as? Double ?? 1))
-        panelOpacities = d.dictionary(forKey: "panelOpacities") as? [String: Double] ?? [:]
+        // 1.4 stored one value per panel ("panelOpacity", "panelOpacities").
+        opacity = d.data(forKey: "opacity").flatMap { try? JSONDecoder().decode(OpacitySet.self, from: $0) }
+            ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
+        panelOpacities = d.data(forKey: "panelOpacitySets")
+            .flatMap { try? JSONDecoder().decode([String: OpacitySet].self, from: $0) }
+            ?? (d.dictionary(forKey: "panelOpacities") as? [String: Double] ?? [:]).mapValues(OpacitySet.init(all:))
         diskDetailedInIcon = d.bool(forKey: "diskDetailedInIcon")
         pinFull = d.bool(forKey: "pinFull")
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
@@ -351,11 +355,6 @@ enum Settings {
         set { store.appearance = newValue }
     }
 
-    static var panelOpacity: Double {
-        get { store.panelOpacity }
-        set { store.panelOpacity = min(1, max(0.3, newValue)) }
-    }
-
     static var pinFull: Bool {
         get { store.pinFull }
         set { store.pinFull = newValue }
@@ -366,15 +365,22 @@ enum Settings {
         set { store.diskDetailedInIcon = newValue }
     }
 
-    /// Opacity of one panel: its own value if set, else the global one.
-    static func opacity(for key: String?) -> Double {
-        key.flatMap { store.panelOpacities[$0] } ?? store.panelOpacity
+    /// Opacity of one panel ("edge" or a section kind): its own values if
+    /// set, else the global ones (key nil = global).
+    static func opacity(for key: String?) -> OpacitySet {
+        key.flatMap { store.panelOpacities[$0] } ?? store.opacity
     }
 
-    /// nil removes the panel's own value (back to the global one).
-    static func setOpacity(_ value: Double?, for key: String) {
-        store.panelOpacities[key] = value.map { min(1, max(0.3, $0)) }
+    /// Key nil sets the global opacity; a nil value removes a panel's own.
+    static func setOpacity(_ value: OpacitySet?, for key: String?) {
+        guard let key else {
+            if let value { store.opacity = value }
+            return
+        }
+        store.panelOpacities[key] = value
     }
+
+    static func hasOwnOpacity(_ key: String) -> Bool { store.panelOpacities[key] != nil }
 
     static var language: Language {
         get { store.language }
@@ -441,5 +447,27 @@ enum Settings {
     static var interval: TimeInterval {
         get { store.interval }
         set { store.interval = newValue }
+    }
+}
+
+/// Opacity of a panel's background, text and graphics (charts, bars, pies).
+/// With `sync`, one slider moves all three.
+struct OpacitySet: Codable, Equatable {
+    var background = 1.0
+    var text = 1.0
+    var graphics = 1.0
+    var sync = true
+
+    static let backgroundRange: ClosedRange<Double> = 0...1
+    static let contentRange: ClosedRange<Double> = 0.2...1
+    static let syncRange: ClosedRange<Double> = 0.3...1
+
+    init() {}
+
+    init(all value: Double) {
+        let v = min(1, max(Self.syncRange.lowerBound, value))
+        background = v
+        text = v
+        graphics = v
     }
 }
