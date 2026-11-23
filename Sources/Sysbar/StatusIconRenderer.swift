@@ -24,6 +24,8 @@ enum StatusIconRenderer {
         var styles: [IconMetric: IconStyle]
         var colorModes: [IconMetric: IconColorMode]
         var showLabel: Bool
+        /// Detailed disk categories for the disk pie/bar; nil = used only.
+        var diskSegments: [(Double, NSColor)]? = nil
 
         func style(_ metric: IconMetric) -> IconStyle { styles[metric] ?? metric.styles[0] }
         func colorMode(_ metric: IconMetric) -> IconColorMode { colorModes[metric] ?? .metric }
@@ -124,13 +126,13 @@ enum StatusIconRenderer {
             }
         case .bar:
             drawBar(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                       accent: accent, mode: mode),
+                                       accent: accent, mode: mode, disk: config.diskSegments),
                     track: metric == .memory || metric == .disk ? trackColor(mode, ink: ink) : .clear,
                     frameColor: ink,
                     rect: NSRect(x: x, y: 0, width: barWidth, height: height))
         case .pie:
             drawPie(segments: segments(for: metric, snapshot: snapshot, value: value,
-                                       accent: accent, mode: mode),
+                                       accent: accent, mode: mode, disk: config.diskSegments),
                     track: trackColor(mode, ink: ink),
                     rect: NSRect(x: x, y: 0, width: pieWidth, height: height))
         case .io:
@@ -222,7 +224,9 @@ enum StatusIconRenderer {
     /// into App / Wired / Compressed in the colored modes (iStat-style).
     private static func segments(for metric: IconMetric, snapshot: SystemStatsSnapshot,
                                  value: Double?, accent: NSColor,
-                                 mode: IconColorMode) -> [(Double, NSColor)] {
+                                 mode: IconColorMode,
+                                 disk: [(Double, NSColor)]? = nil) -> [(Double, NSColor)] {
+        if metric == .disk, mode != .monochrome, let disk { return disk }
         if metric == .memory, mode != .monochrome, snapshot.memory.totalBytes > 0 {
             let m = snapshot.memory
             let total = Double(m.totalBytes)

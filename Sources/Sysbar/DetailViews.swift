@@ -422,6 +422,18 @@ private struct DiskPie: View {
                             .disabled(model.measuringDisk)
                             .help(tr("Measure again", "Medir de novo"))
                         }
+                        Toggle(tr("Show in menu bar icon", "Mostrar no ícone da barra"),
+                               isOn: model.diskDetailedInIcon)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11))
+                            .help(tr("The Disk pie/bar in the menu bar shows these categories for an hour after each measurement, then used vs free again.",
+                                     "A pizza/barra de Disco na barra de menus mostra estas categorias por uma hora após cada medição; depois volta a usado vs livre."))
+                        if Settings.diskDetailedInIcon && !b.isFresh {
+                            Text(tr("Older than 1 hour: the icon shows used vs free. Measure again to update.",
+                                    "Mais de 1 hora: o ícone mostra usado vs livre. Meça de novo para atualizar."))
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
@@ -436,11 +448,11 @@ private struct DiskPie: View {
     }
 
     private static func detailedItems(_ b: DiskBreakdown) -> [Item] {
-        [Item(label: "macOS", value: b.system, color: Color(nsColor: .systemGray)),
-         Item(label: tr("Apps", "Apps"), value: b.applications, color: Color(nsColor: .systemPurple)),
-         Item(label: "Swap", value: b.swap, color: orange),
-         Item(label: tr("Files & other", "Arquivos e outros"), value: b.other, color: Color(nsColor: .systemTeal)),
-         Item(label: tr("Purgeable", "Liberável"), value: b.purgeable, color: blue.opacity(0.45)),
+        [Item(label: "macOS", value: b.system, color: Color(nsColor: DiskPalette.system)),
+         Item(label: tr("Apps", "Apps"), value: b.applications, color: Color(nsColor: DiskPalette.apps)),
+         Item(label: "Swap", value: b.swap, color: Color(nsColor: DiskPalette.swap)),
+         Item(label: tr("Files & other", "Arquivos e outros"), value: b.other, color: Color(nsColor: DiskPalette.other)),
+         Item(label: tr("Purgeable", "Liberável"), value: b.purgeable, color: Color(nsColor: DiskPalette.purgeable)),
          Item(label: tr("Free", "Livre"), value: b.free, color: freeColor)]
     }
 }

@@ -203,6 +203,10 @@ final class SettingsStore {
     var panelOpacity: Double {
         didSet { defaults.set(panelOpacity, forKey: "panelOpacity") }
     }
+    /// Show the detailed disk breakdown in the menu bar disk pie/bar.
+    var diskDetailedInIcon: Bool {
+        didSet { defaults.set(diskDetailedInIcon, forKey: "diskDetailedInIcon") }
+    }
     /// Per-panel overrides of `panelOpacity` ("edge" or a section kind).
     var panelOpacities: [String: Double] {
         didSet { defaults.set(panelOpacities, forKey: "panelOpacities") }
@@ -247,6 +251,7 @@ final class SettingsStore {
         appearance = d.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system
         panelOpacity = min(1, max(0.3, d.object(forKey: "panelOpacity") as? Double ?? 1))
         panelOpacities = d.dictionary(forKey: "panelOpacities") as? [String: Double] ?? [:]
+        diskDetailedInIcon = d.bool(forKey: "diskDetailedInIcon")
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
@@ -343,6 +348,11 @@ enum Settings {
     static var panelOpacity: Double {
         get { store.panelOpacity }
         set { store.panelOpacity = min(1, max(0.3, newValue)) }
+    }
+
+    static var diskDetailedInIcon: Bool {
+        get { store.diskDetailedInIcon }
+        set { store.diskDetailedInIcon = newValue }
     }
 
     /// Opacity of one panel: its own value if set, else the global one.

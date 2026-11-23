@@ -5,7 +5,16 @@
 // folder isn't scanned: that would trigger macOS privacy prompts for
 // Desktop, Documents, Downloads and other apps' data.
 
-import Foundation
+import AppKit
+
+/// Colors of the detailed disk categories (detail panel and menu bar icon).
+enum DiskPalette {
+    static let system = NSColor.systemGray
+    static let apps = NSColor.systemPurple
+    static let swap = NSColor.systemOrange
+    static let other = NSColor.systemTeal
+    static let purgeable = NSColor.systemBlue.withAlphaComponent(0.45)
+}
 
 struct DiskBreakdown: Sendable {
     var total: UInt64
@@ -25,6 +34,21 @@ struct DiskBreakdown: Sendable {
     var other: UInt64 {
         let known = system + swap + applications + purgeable + free
         return total > known ? total - known : 0
+    }
+
+    /// How long a measurement is shown in the menu bar icon; after that the
+    /// icon goes back to used vs free.
+    static let iconValidity: TimeInterval = 3600
+
+    var isFresh: Bool { Date().timeIntervalSince(measuredAt) < Self.iconValidity }
+
+    /// Used categories as fractions of the disk, for a pie or bar (free
+    /// space is the track behind them).
+    var iconSegments: [(Double, NSColor)] {
+        let t = Double(max(1, total))
+        return [(Double(system) / t, DiskPalette.system), (Double(applications) / t, DiskPalette.apps),
+                (Double(swap) / t, DiskPalette.swap), (Double(other) / t, DiskPalette.other),
+                (Double(purgeable) / t, DiskPalette.purgeable)]
     }
 
     static func measure() -> DiskBreakdown? {

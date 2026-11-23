@@ -45,6 +45,7 @@ final class AppModel {
             await MainActor.run {
                 self.diskBreakdown = result ?? self.diskBreakdown
                 self.measuringDisk = false
+                self.bump()
             }
         }
     }
@@ -127,6 +128,17 @@ final class AppModel {
     func resetOpacity(for key: String) {
         Settings.setOpacity(nil, for: key)
         bump()
+    }
+
+    var diskDetailedInIcon: Binding<Bool> {
+        Binding(get: { Settings.diskDetailedInIcon }, set: { Settings.diskDetailedInIcon = $0; self.bump() })
+    }
+
+    /// Detailed disk slices for the menu bar icon, while the last
+    /// measurement is recent; nil = plain used vs free.
+    var menuBarDiskSegments: [(Double, NSColor)]? {
+        guard Settings.diskDetailedInIcon, let b = diskBreakdown, b.isFresh else { return nil }
+        return b.iconSegments
     }
 
     var autoCheckUpdates: Binding<Bool> {

@@ -78,6 +78,17 @@ enum Preview {
             save(onBar: StatusIconRenderer.image(snapshot: snapshot, config: mixed, appearance: appearance),
                  appearance: appearance, to: dir.appendingPathComponent("mixed-\(suffix).png"))
 
+            // Disk pie and bar with the detailed breakdown.
+            if let breakdown = model.diskBreakdown {
+                for style in [IconStyle.pie, .bar] {
+                    var detailed = config([.disk], { _ in style }, { _ in .metric })
+                    detailed.diskSegments = breakdown.iconSegments
+                    save(onBar: StatusIconRenderer.image(snapshot: snapshot, config: detailed, appearance: appearance),
+                         appearance: appearance,
+                         to: dir.appendingPathComponent("icon-disk-\(style.rawValue)-detailed-\(suffix).png"))
+                }
+            }
+
             let scheme: ColorScheme = appearanceName == .aqua ? .light : .dark
             let savedLanguage = Settings.language
             for language in Language.allCases {

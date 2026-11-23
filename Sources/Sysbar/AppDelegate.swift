@@ -99,7 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        let config = StatusIconRenderer.Config.current
+        var config = StatusIconRenderer.Config.current
+        config.diskSegments = model.menuBarDiskSegments
         if config.metrics.isEmpty {
             let image = NSImage(systemSymbolName: "gauge.with.dots.needle.33percent",
                                 accessibilityDescription: "Sysbar")
