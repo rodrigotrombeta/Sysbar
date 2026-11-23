@@ -356,6 +356,17 @@ private struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 120)
             }
+            LabeledContent(tr("Opacity", "Opacidade")) {
+                HStack(spacing: 6) {
+                    Slider(value: model.panelOpacity, in: 0.3...1, step: 0.05)
+                        .controlSize(.small)
+                        .frame(width: 120)
+                    Text("\(Int((Settings.panelOpacity * 100).rounded()))%")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
+            }
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)
 

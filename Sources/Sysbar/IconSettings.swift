@@ -199,6 +199,10 @@ final class SettingsStore {
     var appearance: AppAppearance {
         didSet { defaults.set(appearance.rawValue, forKey: "appAppearance") }
     }
+    /// Opacity of every Sysbar panel, 0.3...1.
+    var panelOpacity: Double {
+        didSet { defaults.set(panelOpacity, forKey: "panelOpacity") }
+    }
     var language: Language {
         didSet { defaults.set(language.rawValue, forKey: "language") }
     }
@@ -237,6 +241,7 @@ final class SettingsStore {
         colorModes = d.dictionary(forKey: "iconColorModes") as? [String: String] ?? [:]
         showLabel = d.object(forKey: "iconShowLabel") as? Bool ?? true
         appearance = d.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system
+        panelOpacity = min(1, max(0.3, d.object(forKey: "panelOpacity") as? Double ?? 1))
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
@@ -328,6 +333,11 @@ enum Settings {
     static var appearance: AppAppearance {
         get { store.appearance }
         set { store.appearance = newValue }
+    }
+
+    static var panelOpacity: Double {
+        get { store.panelOpacity }
+        set { store.panelOpacity = min(1, max(0.3, newValue)) }
     }
 
     static var language: Language {

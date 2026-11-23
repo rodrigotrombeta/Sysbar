@@ -114,6 +114,10 @@ final class AppModel {
         Binding(get: { Settings.appearance }, set: { Settings.appearance = $0; self.bump() })
     }
 
+    var panelOpacity: Binding<Double> {
+        Binding(get: { Settings.panelOpacity }, set: { Settings.panelOpacity = $0; self.bump() })
+    }
+
     var autoCheckUpdates: Binding<Bool> {
         Binding(get: { Settings.autoCheckUpdates }, set: { Settings.autoCheckUpdates = $0 })
     }

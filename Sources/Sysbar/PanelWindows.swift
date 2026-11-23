@@ -101,7 +101,10 @@ final class HostedPanel {
     var isVisible: Bool { window.isVisible }
     var fittingSize: NSSize { host.fittingSize }
 
-    func applyAppearance() { window.appearance = Settings.appearance.nsAppearance }
+    func applyAppearance() {
+        window.appearance = Settings.appearance.nsAppearance
+        window.alphaValue = Settings.panelOpacity
+    }
 
     func setFrame(_ frame: NSRect) {
         guard frame != window.frame else { return }
