@@ -20,7 +20,7 @@ Available in **English** and **Portuguese**.
 - Public APIs only (Mach host statistics, IOKit accelerator and block-storage
   stats, `vm_statistics64`) — no `sudo`, no helper tools.
 - Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
-  ~25 MB of RAM.
+  ~35 MB of RAM with the panels closed.
 
 ## Screenshots
 
@@ -135,12 +135,17 @@ remove Sysbar under System Settings → General → Login Items).
 
 Click the menu bar icon to open the Sysbar panel. It stays open while you
 interact with it (click outside it, press Esc or click the icon again to close).
-The panel pins to the edge of the display where you click 📌 (and returns
-there after a restart or when that monitor is reconnected).
-When the panel is pinned to a screen edge, clicking the icon unpins and closes it.
+With several displays, the panel opens on the one whose menu bar you clicked.
 
-**Header (always on top):** 📌 pin to the left/right screen edge (or unpin) ·
-🔇 Mute all (edge panel only) · Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings · quit.
+**Pinning:** 📌 opens *Pin to left edge* / *Pin to right edge*, each with
+**Float** (the panel floats at its content height) or **Full** (it fills the
+whole side of the screen, with square corners). The panel pins to the display
+where you click and returns there after a restart or when that monitor is
+reconnected. When it's pinned, clicking the menu bar icon unpins and closes it.
+
+**Header (always on top):** 📌 pin · 💧 opacity and 🔇 Mute all (edge panel
+only) · Activity Monitor (menu bar panel only) · appearance (System → Light →
+Dark) · ⚙︎ settings · quit.
 
 **Sections:** CPU · GPU · Memory · Disk · Network · Top memory (top 5 processes).
 
@@ -155,20 +160,28 @@ When the panel is pinned to a screen edge, clicking the icon unpins and closes i
 - **Mute mode** (panel pinned to a screen edge): the 🔈 next to a section's `<<`
   stops its details from opening on hover; *Mute all* (🔇 in the header) does
   it for every section. Clicking a muted section still pins its details.
+- **Move** a pinned detail panel anywhere by dragging its title row (dragging a
+  hover preview pins it).
+- **Opacity:** Background, Text and Graphics each have their own slider (or
+  one slider with *Sync opacity*), from 0 % — e.g. only the charts floating on
+  the desktop. It's global, in Settings or the 💧 of a pinned panel; a detail
+  panel can switch to *This panel only* to keep its own, saved opacity.
 
 | Details | Contents |
 |---|---|
 | **CPU** | Chip and core layout (e.g. 6E + 4P), user / system / E-cores / P-cores, utilization history, load average, thermal state, uptime, top 5 processes by CPU, and a **Per core** dropdown with a chart for every core. |
 | **GPU** | GPU name and core count, GPU / renderer / tiler utilization and GPU memory, with a history chart for each, plus a **Per GPU** dropdown with a chart per GPU device. |
-| **Memory** | Used / total, memory pressure, App / Wired / Compressed / Swap, usage history, page-in/out history, top 10 processes by memory. |
-| **Disk** | Startup volume usage, read/write speed, totals since boot, read/write history. |
+| **Memory** | Used / total, memory pressure, App / Wired / Compressed / Swap, a stacked chart of App / Wired / Compressed / Swap as % of RAM (smallest at the bottom), usage history, page-in/out history, top 10 processes by memory with their share of RAM. |
+| **Disk** | Startup volume usage as a **Pie** or **Progress** bar, used / free percentages, read/write speed, totals since boot, read/write history. *Detailed* splits the pie into macOS, apps, swap, files & other, purgeable and free (measured on demand, ~10 s); optionally the menu bar disk pie/bar shows the same categories for an hour after each measurement. |
 | **Network** | Download / upload speed and peaks, interface, IP address, history. |
-| **Top processes** | Top 15 by memory and top 10 by CPU. |
+| **Top processes** | Top 15 by memory (with % of RAM) and top 10 by CPU. **Admin rights…** asks for your administrator password to also list other users' processes (e.g. WindowServer); asked again after Sysbar restarts. |
 
 > macOS's public APIs report GPU utilization per GPU *device* (one on Apple
 > Silicon), not per GPU core, and don't expose Neural Engine (ANE) usage or
 > FPS, so those aren't shown. Processes owned by other users (e.g.
-> WindowServer) need admin rights and aren't listed.
+> WindowServer) are only listed after *Admin rights…*: Sysbar then runs a
+> copy of itself as root that only answers "sample now" requests from Sysbar
+> and exits when you click Stop or quit Sysbar.
 
 **Settings (⚙︎)** — changes apply instantly and the panel stays open; click anywhere outside the panel to go back to the stats:
 
@@ -178,7 +191,7 @@ When the panel is pinned to a screen edge, clicking the icon unpins and closes i
 | Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, I/O (page-ins/outs). Disk: pie, bar, percentage, I/O (read/write). Network: I/O chart (download/upload) or speed text. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
-| General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Open at login (needs the app in `/Applications`). |
+| General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Pinned panel (Float / Full height), Opacity (Background / Text / Graphics, or Sync opacity), Open at login (needs the app in `/Applications`). |
 | Updates | **Check for Updates…** asks GitHub for the latest release; if it is newer, Sysbar offers to download its DMG (install it like the first time). "Check for updates automatically" (on by default) does this once a day and stays silent when offline. The only network request Sysbar makes is to `api.github.com`. |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).
@@ -209,7 +222,9 @@ Sources/Sysbar/
   Charts.swift               history charts, meters
   PanelWindows.swift         floating panels, hover tracking, detail placement
   ProcessSampler.swift       top processes by memory / CPU (libproc)
-  IconSettings.swift         icon metrics/style/color options (UserDefaults)
+  IconSettings.swift         settings: icon, opacity, pin… (UserDefaults)
+  DiskBreakdown.swift        "Detailed" disk usage (APFS volumes, /Applications)
+  ProcessHelper.swift        "Admin rights": root helper listing every process
   UpdateChecker.swift        "Check for updates" via GitHub releases
   DemoVideo.swift            `--demo-frames`: promo animation frames (scripts/demo-video.sh)
   Screenshots.swift          `--screenshots`: README panel and settings images
