@@ -37,6 +37,10 @@ final class AppModel {
         Settings.moveSection(kind, by: offset)
     }
 
+    func moveSection(_ kind: SystemStatKind, to index: Int) {
+        Settings.moveSection(kind, to: index)
+    }
+
     func toggleMute(_ kind: SystemStatKind) {
         Settings.toggleMute(kind)
         muteChanged()

@@ -18,7 +18,7 @@ struct SectionFramesKey: PreferenceKey {
 final class PanelContext {
     var onSectionFrames: ([SystemStatKind: CGRect]) -> Void = { _ in }
     var onTapSection: (SystemStatKind) -> Void = { _ in }
-    /// The screen-edge panel shows the Mute mode buttons.
+    /// The screen-edge panel shows the per-section pin and Mute mode buttons.
     var showsMute = false
 }
 
@@ -56,7 +56,7 @@ struct MainPanelView: View {
             ForEach(Array(order.enumerated()), id: \.element) { index, kind in
                 if index > 0 { SectionRule() }
                 SectionHost(model: model, kind: kind, context: context,
-                            isFirst: index == 0, isLast: index == order.count - 1)
+                            index: index, count: order.count)
             }
         }
         .padding(.bottom, 6)
@@ -69,13 +69,15 @@ private struct ContentHeightKey: PreferenceKey {
 }
 
 /// One section: reports its frame, shows a pin badge when its details are
-/// pinned, and pins/unpins the details on click.
+/// pinned, and pins/unpins the details on click. It moves with the ▲/▼
+/// arrows, or — on the edge-pinned panel — by dragging its title row.
 private struct SectionHost: View {
     let model: AppModel
     let kind: SystemStatKind
     let context: PanelContext
-    let isFirst: Bool
-    let isLast: Bool
+    let index: Int
+    let count: Int
+    @State private var dropTargeted = false
 
     var body: some View {
         let s = model.snapshot
@@ -91,15 +93,31 @@ private struct SectionHost: View {
                                                total: s.memory.totalBytes)
             }
         }
+        .overlay(alignment: .top) {
+            if context.showsMute { dragHandle }
+        }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 6) {
-                HStack(spacing: 2) {
-                    moveButton("chevron.up", enabled: !isFirst, offset: -1,
-                               help: tr("Move this section up", "Mover esta seção para cima"))
-                    moveButton("chevron.down", enabled: !isLast, offset: 1,
-                               help: tr("Move this section down", "Mover esta seção para baixo"))
+                if !context.showsMute {
+                    HStack(spacing: 2) {
+                        moveButton("chevron.up", enabled: index > 0, offset: -1,
+                                   help: tr("Move this section up", "Mover esta seção para cima"))
+                        moveButton("chevron.down", enabled: index < count - 1, offset: 1,
+                                   help: tr("Move this section down", "Mover esta seção para baixo"))
+                    }
                 }
                 if context.showsMute {
+                    // Edge-pinned panel: explicit button to keep the details open.
+                    Button { context.onTapSection(kind) } label: {
+                        Image(systemName: pinned ? "pin.fill" : "pin")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(pinned ? Color.accentColor : Color.secondary.opacity(0.5))
+                            .frame(width: 14, height: 12)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help(pinned ? tr("Unpin details", "Desafixar detalhes")
+                                 : tr("Keep these details open", "Manter estes detalhes abertos"))
                     let muted = Settings.isMuted(kind)
                     Button { model.toggleMute(kind) } label: {
                         Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
@@ -112,9 +130,11 @@ private struct SectionHost: View {
                     .help(muted ? tr("Unmute: show details on hover", "Reativar: mostrar detalhes ao passar o mouse")
                                 : tr("Mute: don't show details on hover", "Silenciar: não mostrar detalhes ao passar o mouse"))
                 }
-                Image(systemName: pinned ? "pin.fill" : "chevron.left.2")
+                // The edge panel has its own pin button, so << stays a hint.
+                let pinBadge = pinned && !context.showsMute
+                Image(systemName: pinBadge ? "pin.fill" : "chevron.left.2")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(pinned ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .foregroundStyle(pinBadge ? Color.accentColor : Color.secondary.opacity(0.5))
                     .help(tr("Hover for details · click to keep them open",
                              "Passe o mouse para ver detalhes · clique para fixá-los"))
             }
@@ -124,11 +144,45 @@ private struct SectionHost: View {
         .background(RoundedRectangle(cornerRadius: 8)
             .fill(pinned ? Color.accentColor.opacity(0.08) : Color.clear)
             .padding(.horizontal, 4))
+        .overlay {
+            // A dragged section dropped here takes this section's place.
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .padding(.horizontal, 4)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { context.onTapSection(kind) }
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let dragged = SystemStatKind(rawValue: raw),
+                  dragged != kind else { return false }
+            model.moveSection(dragged, to: index)
+            return true
+        } isTargeted: { dropTargeted = $0 && context.showsMute }
         .background(GeometryReader { geo in
             Color.clear.preference(key: SectionFramesKey.self, value: [kind: geo.frame(in: .global)])
         })
+    }
+
+    /// The title row of the section: hold and drag it up or down.
+    private var dragHandle: some View {
+        Color.clear
+            .frame(height: 30)
+            .contentShape(Rectangle())
+            .draggable(kind.rawValue) {
+                Text(kind.detailTitle.uppercased())
+                    .font(.system(size: StatsTheme.caption, weight: .bold))
+                    .kerning(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .onHover { inside in
+                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            }
+            .help(tr("Drag to move this section up or down",
+                     "Arraste para mover esta seção para cima ou para baixo"))
     }
 
     private func moveButton(_ symbol: String, enabled: Bool, offset: Int, help: String) -> some View {

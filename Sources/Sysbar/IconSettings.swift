@@ -369,6 +369,15 @@ enum Settings {
         store.sectionOrder = list
     }
 
+    /// Moves a panel section to `index` (drag and drop on the edge panel).
+    static func moveSection(_ kind: SystemStatKind, to index: Int) {
+        var list = store.sectionOrder
+        guard let from = list.firstIndex(of: kind) else { return }
+        list.remove(at: from)
+        list.insert(kind, at: min(max(index, 0), list.count))
+        if list != store.sectionOrder { store.sectionOrder = list }
+    }
+
     static func isMuted(_ kind: SystemStatKind) -> Bool { store.mutedSections.contains(kind) }
 
     static var allMuted: Bool { store.mutedSections.count == SystemStatKind.allCases.count }
