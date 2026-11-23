@@ -17,6 +17,13 @@ MainActor.assumeIsolated {
         exit(0)
     }
 
+    if let flag = args.firstIndex(of: "--screenshots"), flag + 1 < args.count {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        Screenshots.write(to: URL(fileURLWithPath: args[flag + 1]))
+        exit(0)
+    }
+
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate

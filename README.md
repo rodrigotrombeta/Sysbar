@@ -10,11 +10,38 @@ panels, behind an animated,
 [Stats](https://github.com/exelban/stats)-style menu bar icon.
 Available in **English** and **Portuguese**.
 
+<p align="center">
+  <a href="docs/sysbar-demo.mp4"><img src="docs/images/demo.gif" width="800"
+     alt="Sysbar demo: animated menu bar icon, main panel and pinned detail panels"></a>
+  <br><sub>▶︎ Click for the full-quality <a href="docs/sysbar-demo.mp4">demo video (MP4)</a>.</sub>
+</p>
+
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
 - Public APIs only (Mach host statistics, IOKit accelerator and block-storage
   stats, `vm_statistics64`) — no `sudo`, no helper tools.
 - Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
   ~25 MB of RAM.
+
+## Screenshots
+
+![Main panel with the CPU and GPU details pinned beside it](docs/images/hero.png)
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/panel-dark.png" width="200" alt="Main panel, dark"></td>
+    <td align="center"><img src="docs/images/panel-light.png" width="200" alt="Main panel, light"></td>
+    <td align="center"><img src="docs/images/edge-dark.png" width="200" alt="Panel pinned to a screen edge, in Mute mode"></td>
+    <td align="center"><img src="docs/images/settings-dark.png" width="200" alt="Settings"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Main panel (dark)</sub></td>
+    <td align="center"><sub>Main panel (light)</sub></td>
+    <td align="center"><sub>Pinned to a screen edge, GPU and Disk muted</sub></td>
+    <td align="center"><sub>Settings</sub></td>
+  </tr>
+</table>
+
+![Menu bar icon styles: line, bar, pie, percentage and I/O charts](docs/images/icon-styles.png)
 
 ## Download & install
 
@@ -77,6 +104,13 @@ To package a release (universal app, DMG and ZIP in `dist/`):
 
 ```bash
 scripts/release.sh
+```
+
+To regenerate the README screenshots, GIF and demo video in `docs/` (needs
+`ffmpeg`; process names and the IP address are replaced with neutral ones):
+
+```bash
+scripts/readme-media.sh
 ```
 
 If you change the app icon drawing in `scripts/make-icon.swift`, regenerate the
@@ -176,8 +210,11 @@ Sources/Sysbar/
   IconSettings.swift         icon metrics/style/color options (UserDefaults)
   UpdateChecker.swift        "Check for updates" via GitHub releases
   DemoVideo.swift            `--demo-frames`: promo animation frames (scripts/demo-video.sh)
+  Screenshots.swift          `--screenshots`: README panel and settings images
 scripts/make-icon.swift      generates Resources/AppIcon.icns
 scripts/release.sh           universal build + DMG/ZIP for GitHub releases
+scripts/readme-media.sh      README screenshots, GIF and demo video (docs/)
+docs/                        README images and demo video
 build.sh                     build / install script
 ```
 

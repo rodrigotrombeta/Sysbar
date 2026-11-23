@@ -57,13 +57,13 @@ enum DemoVideo {
             var p = processes.sample()
             p.topMemory.removeAll { $0.pid == ownPID }
             p.topCPU.removeAll { $0.pid == ownPID }
-            return p
+            return p.anonymized()
         }
 
         // Pre-roll so the history charts start full.
         for i in 0..<60 {
             pump(0.25)
-            model.snapshot = sampler.sample()
+            model.snapshot = sampler.sample().anonymized()
             if i % 8 == 0 { model.processes = sampleProcesses() }
         }
 
@@ -74,7 +74,7 @@ enum DemoVideo {
             model.pinnedDetails = scene == .panel ? [.cpu, .gpu] : scene == .memory ? [.memory, .disk] : []
             for i in 0..<count {
                 autoreleasepool {
-                    model.snapshot = sampler.sample()
+                    model.snapshot = sampler.sample().anonymized()
                     if i % 4 == 0 { model.processes = sampleProcesses() }
                     state.fade = min(1, Double(i + 1) / 3)
                     updateIcons(state, snapshot: model.snapshot, appearance: appearance)
