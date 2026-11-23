@@ -235,6 +235,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             edgePanel.close()
             details.closeUnpinned()
         } else {
+            // Pin on the display where the user clicked the pin button.
+            if let id = (NSScreen.underMouse ?? popover.screen).displayID {
+                Settings.pinScreenID = id
+            }
             closePopover()
             edgePanel.show()
         }

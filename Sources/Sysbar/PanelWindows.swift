@@ -160,7 +160,13 @@ final class MainPanelController {
     }
 
     var screen: NSScreen {
-        panel.window.screen ?? statusButton()?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        // The edge panel stays on the display it was pinned on, while that
+        // display is connected.
+        if placement == .edge, let id = Settings.pinScreenID,
+           let pinned = NSScreen.screens.first(where: { $0.displayID == id }) {
+            return pinned
+        }
+        return panel.window.screen ?? statusButton()?.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
     func show() {
@@ -339,5 +345,17 @@ final class DetailManager {
             frame.origin.y = max(visible.minY + 4, top - size.height)
             panel.setFrame(frame.integral)
         }
+    }
+}
+
+extension NSScreen {
+    var displayID: CGDirectDisplayID? {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
+    /// The display under the mouse pointer.
+    static var underMouse: NSScreen? {
+        let point = NSEvent.mouseLocation
+        return screens.first { NSMouseInRect(point, $0.frame, false) }
     }
 }

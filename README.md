@@ -135,6 +135,8 @@ remove Sysbar under System Settings → General → Login Items).
 
 Click the menu bar icon to open the Sysbar panel. It stays open while you
 interact with it (click outside it, press Esc or click the icon again to close).
+The panel pins to the edge of the display where you click 📌 (and returns
+there after a restart or when that monitor is reconnected).
 When the panel is pinned to a screen edge, clicking the icon unpins and closes it.
 
 **Header (always on top):** 📌 pin to the left/right screen edge (or unpin) ·

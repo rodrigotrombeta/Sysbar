@@ -351,6 +351,12 @@ enum Settings {
         set { defaults.set(newValue, forKey: "skippedVersion") }
     }
 
+    /// Display the edge panel is pinned to (CGDirectDisplayID); nil = default.
+    static var pinScreenID: UInt32? {
+        get { (defaults.object(forKey: "pinScreenID") as? NSNumber)?.uint32Value }
+        set { defaults.set(newValue.map { NSNumber(value: $0) }, forKey: "pinScreenID") }
+    }
+
     /// nil = not pinned.
     static var pinSide: PinSide? {
         get { store.pinSide }
