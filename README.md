@@ -111,6 +111,8 @@ interact with it (click outside it, press Esc or click the icon again to close).
 - **Click** a section to keep its details open (📌). Several can stay pinned at
   once; they are placed side by side without overlapping. Click again, or the
   ✕ in the detail panel, to close.
+- **Reorder sections** with the ▲/▼ arrows next to each section's `<<`; the
+  order is shared by both panels and remembered.
 - **Mute mode** (panel pinned to a screen edge): the 🔈 next to a section's `<<`
   stops its details from opening on hover; *Mute all* (🔇 in the header) does
   it for every section. Clicking a muted section still pins its details.

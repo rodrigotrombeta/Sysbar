@@ -124,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = model.maxPanelHeight
             _ = Settings.language
             _ = Settings.pinSide
+            _ = Settings.sectionOrder
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 self?.fitPanels()

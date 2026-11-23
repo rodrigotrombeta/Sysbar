@@ -52,9 +52,11 @@ struct MainPanelView: View {
 
     private var sections: some View {
         VStack(spacing: 0) {
-            ForEach(Array(SystemStatKind.allCases.enumerated()), id: \.element) { index, kind in
+            let order = Settings.sectionOrder
+            ForEach(Array(order.enumerated()), id: \.element) { index, kind in
                 if index > 0 { SectionRule() }
-                SectionHost(model: model, kind: kind, context: context)
+                SectionHost(model: model, kind: kind, context: context,
+                            isFirst: index == 0, isLast: index == order.count - 1)
             }
         }
         .padding(.bottom, 6)
@@ -72,6 +74,8 @@ private struct SectionHost: View {
     let model: AppModel
     let kind: SystemStatKind
     let context: PanelContext
+    let isFirst: Bool
+    let isLast: Bool
 
     var body: some View {
         let s = model.snapshot
@@ -89,6 +93,12 @@ private struct SectionHost: View {
         }
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 6) {
+                HStack(spacing: 2) {
+                    moveButton("chevron.up", enabled: !isFirst, offset: -1,
+                               help: tr("Move this section up", "Mover esta seção para cima"))
+                    moveButton("chevron.down", enabled: !isLast, offset: 1,
+                               help: tr("Move this section down", "Mover esta seção para baixo"))
+                }
                 if context.showsMute {
                     let muted = Settings.isMuted(kind)
                     Button { model.toggleMute(kind) } label: {
@@ -119,6 +129,19 @@ private struct SectionHost: View {
         .background(GeometryReader { geo in
             Color.clear.preference(key: SectionFramesKey.self, value: [kind: geo.frame(in: .global)])
         })
+    }
+
+    private func moveButton(_ symbol: String, enabled: Bool, offset: Int, help: String) -> some View {
+        Button { model.moveSection(kind, by: offset) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(enabled ? 0.6 : 0.2))
+                .frame(width: 12, height: 12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .help(help)
     }
 }
 

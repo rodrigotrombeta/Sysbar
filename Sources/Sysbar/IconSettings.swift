@@ -217,6 +217,10 @@ final class SettingsStore {
     var mutedSections: Set<SystemStatKind> {
         didSet { defaults.set(mutedSections.map(\.rawValue).sorted(), forKey: "mutedSections") }
     }
+    /// Top-to-bottom order of the panel sections (CPU, GPU, Memory, …).
+    var sectionOrder: [SystemStatKind] {
+        didSet { defaults.set(sectionOrder.map(\.rawValue), forKey: "sectionOrder") }
+    }
     /// Mirror of SMAppService status (not persisted); refreshed after
     /// register/unregister and whenever Settings is shown.
     var openAtLogin = false
@@ -237,6 +241,10 @@ final class SettingsStore {
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
         mutedSections = Set((d.stringArray(forKey: "mutedSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
+        let savedSections = (d.stringArray(forKey: "sectionOrder") ?? []).compactMap(SystemStatKind.init(rawValue:))
+        var seenSections = Set<SystemStatKind>()
+        let uniqueSections = savedSections.filter { seenSections.insert($0).inserted }
+        sectionOrder = uniqueSections + SystemStatKind.allCases.filter { !seenSections.contains($0) }
         let v = d.double(forKey: "refreshInterval")
         interval = Settings.intervals.contains(v) ? v : 1
     }
@@ -347,6 +355,18 @@ enum Settings {
     static var pinSide: PinSide? {
         get { store.pinSide }
         set { store.pinSide = newValue }
+    }
+
+    static var sectionOrder: [SystemStatKind] { store.sectionOrder }
+
+    /// Moves a panel section one place up (-1) or down (+1).
+    static func moveSection(_ kind: SystemStatKind, by offset: Int) {
+        var list = store.sectionOrder
+        guard let from = list.firstIndex(of: kind) else { return }
+        let to = from + offset
+        guard list.indices.contains(to) else { return }
+        list.swapAt(from, to)
+        store.sectionOrder = list
     }
 
     static func isMuted(_ kind: SystemStatKind) -> Bool { store.mutedSections.contains(kind) }
