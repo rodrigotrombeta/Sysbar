@@ -83,6 +83,7 @@ enum StatusIconRenderer {
         case .percent: return percentWidth
         case .linePercent: return label + chartWidth + gap + percentWidth - 2
         case .speed: return label + speedWidth
+        case .amount: return label + speedWidth
         }
     }
 
@@ -148,9 +149,42 @@ enum StatusIconRenderer {
                       downColor: mono ? ink : .systemBlue,
                       upColor: mono ? ink : .systemRed,
                       rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
+        case .amount:
+            let amounts = metric.amounts(in: snapshot)
+            drawAmounts(used: amounts?.used, free: amounts?.free, binary: metric == .memory, textColor: ink,
+                        usedColor: mono ? ink : accent, freeColor: mono ? ink : ink.withAlphaComponent(0.55),
+                        rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
         case .percent:
             break
         }
+    }
+
+    /// Two right-aligned lines: "U 17.1 GB" (used) over "F 6.9 GB" (free).
+    private static func drawAmounts(used: UInt64?, free: UInt64?, binary: Bool, textColor: NSColor,
+                                    usedColor: NSColor, freeColor: NSColor, rect: NSRect) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .right
+        func line(_ tag: String, _ bytes: UInt64?, _ tagColor: NSColor, y: CGFloat) {
+            let s = NSMutableAttributedString(
+                string: tag + " ",
+                attributes: [.font: font, .foregroundColor: tagColor, .paragraphStyle: para])
+            s.append(NSAttributedString(
+                string: bytes.map { shortBytes($0, binary: binary) } ?? "–",
+                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
+            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+        }
+        line("U", used, usedColor, y: rect.minY + 8)
+        line("F", free, freeColor, y: rect.minY - 1)
+    }
+
+    /// "17.1 GB", "429 GB", "1.2 TB". Memory in binary units (like the
+    /// panel and Activity Monitor), disks in decimal ones (like Finder).
+    private static func shortBytes(_ bytes: UInt64, binary: Bool) -> String {
+        let gb = Double(bytes) / (binary ? 1_073_741_824 : 1e9)
+        if gb >= 1000 { return String(format: "%.1f TB", gb / 1000) }
+        if gb >= 100 { return String(format: "%.0f GB", gb) }
+        return String(format: "%.1f GB", gb)
     }
 
     private static func color(for metric: IconMetric, value: Double?, mode: IconColorMode,

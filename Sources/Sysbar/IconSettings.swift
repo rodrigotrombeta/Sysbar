@@ -55,11 +55,25 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .cpu, .eCores, .pCores, .gpu, .gpuMemory:
             return [.line, .bar, .pie, .percent, .linePercent]
         case .memory:
-            return [.pie, .bar, .line, .percent, .io]
+            return [.pie, .bar, .line, .percent, .amount, .io]
         case .disk:
-            return [.pie, .bar, .percent, .io]
+            return [.pie, .bar, .percent, .amount, .io]
         case .network:
             return [.io, .speed]
+        }
+    }
+
+    /// Used and free bytes, for the "Used / free" text style.
+    func amounts(in s: SystemStatsSnapshot) -> (used: UInt64, free: UInt64)? {
+        switch self {
+        case .memory:
+            let m = s.memory
+            guard m.totalBytes > 0 else { return nil }
+            return (m.usedBytes, m.totalBytes > m.usedBytes ? m.totalBytes - m.usedBytes : 0)
+        case .disk:
+            return s.disk.map { ($0.usedBytes, $0.freeBytes) }
+        default:
+            return nil
         }
     }
 
@@ -101,7 +115,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
 
 /// How one metric is drawn in the menu bar.
 enum IconStyle: String, CaseIterable, Identifiable {
-    case line, bar, pie, percent, linePercent, io, speed
+    case line, bar, pie, percent, linePercent, io, speed, amount
 
     var id: String { rawValue }
 
@@ -114,6 +128,7 @@ enum IconStyle: String, CaseIterable, Identifiable {
         case .linePercent: return tr("Chart + %", "Gráfico + %")
         case .io: return tr("I/O chart", "Gráfico de I/O")
         case .speed: return tr("Speed (text)", "Velocidade (texto)")
+        case .amount: return tr("Used / free (GB)", "Usado / livre (GB)")
         }
     }
 }
