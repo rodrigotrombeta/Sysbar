@@ -50,6 +50,12 @@ struct DetailContainer: View {
                 }
             }
             .buttonStyle(.borderless)
+            // Drag the title row to move the panel anywhere; moving a hover
+            // preview pins it, so it stays where it was dropped.
+            .background(WindowDragArea {
+                if !model.pinnedDetails.contains(kind) { model.toggleDetailPin(kind) }
+            }
+            .help(tr("Drag to move", "Arraste para mover")))
 
             switch kind {
             case .cpu: CPUDetail(model: model)
@@ -384,5 +390,37 @@ struct ProcessList: View {
                 }
             }
         }
+    }
+}
+
+/// Moves its window when dragged (for borderless panels, which have no
+/// title bar). `onDragStart` runs once per drag, before the window moves.
+struct WindowDragArea: NSViewRepresentable {
+    var onDragStart: () -> Void = {}
+
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        view.onDragStart = onDragStart
+        return view
+    }
+
+    func updateNSView(_ view: DragView, context: Context) { view.onDragStart = onDragStart }
+
+    final class DragView: NSView {
+        var onDragStart: () -> Void = {}
+        private var mouseDownEvent: NSEvent?
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+        override func mouseDown(with event: NSEvent) { mouseDownEvent = event }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = mouseDownEvent, let window else { return }
+            mouseDownEvent = nil
+            onDragStart()
+            window.performDrag(with: start)
+        }
+
+        override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
     }
 }
