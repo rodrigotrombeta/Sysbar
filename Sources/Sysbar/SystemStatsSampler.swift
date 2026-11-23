@@ -99,6 +99,11 @@ struct SystemStatsSnapshot: Sendable {
     var cpuHistory: [Double] = []
     var memoryHistory: [Double] = []
     var gpuMemoryHistory: [Double] = []
+    /// Memory breakdown histories in bytes (stacked memory chart).
+    var memoryAppHistory: [Double] = []
+    var memoryWiredHistory: [Double] = []
+    var memoryCompressedHistory: [Double] = []
+    var memorySwapHistory: [Double] = []
 
     var disk: Disk?
     /// Disk read/write throughput (all block-storage drivers).
@@ -175,6 +180,10 @@ final class SystemStatsSampler {
     private var gpuHistory: [Double] = []
     private var cpuHistory: [Double] = []
     private var memoryHistory: [Double] = []
+    private var memoryAppHistory: [Double] = []
+    private var memoryWiredHistory: [Double] = []
+    private var memoryCompressedHistory: [Double] = []
+    private var memorySwapHistory: [Double] = []
     private var gpuMemoryHistory: [Double] = []
     private var diskReadHistory: [Double] = []
     private var diskWriteHistory: [Double] = []
@@ -259,6 +268,10 @@ final class SystemStatsSampler {
 
         snapshot.memory = Self.readMemory()
         Self.appendHistory(&memoryHistory, snapshot.memory.usedFraction)
+        Self.appendHistory(&memoryAppHistory, Double(snapshot.memory.appBytes))
+        Self.appendHistory(&memoryWiredHistory, Double(snapshot.memory.wiredBytes))
+        Self.appendHistory(&memoryCompressedHistory, Double(snapshot.memory.compressedBytes))
+        Self.appendHistory(&memorySwapHistory, Double(snapshot.memory.swapUsedBytes))
         if let gpuMem = snapshot.gpuMemoryFraction {
             Self.appendHistory(&gpuMemoryHistory, gpuMem)
         }
@@ -328,6 +341,10 @@ final class SystemStatsSampler {
         snapshot.gpuHistory = gpuHistory
         snapshot.cpuHistory = cpuHistory
         snapshot.memoryHistory = memoryHistory
+        snapshot.memoryAppHistory = memoryAppHistory
+        snapshot.memoryWiredHistory = memoryWiredHistory
+        snapshot.memoryCompressedHistory = memoryCompressedHistory
+        snapshot.memorySwapHistory = memorySwapHistory
         snapshot.gpuMemoryHistory = gpuMemoryHistory
         snapshot.diskReadHistory = diskReadHistory
         snapshot.diskWriteHistory = diskWriteHistory

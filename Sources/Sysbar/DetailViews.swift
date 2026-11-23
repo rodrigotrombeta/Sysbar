@@ -219,6 +219,14 @@ private struct GPUDetail: View {
 
 // MARK: - Memory
 
+private let appColor = Color(nsColor: MemoryPalette.app)
+private let wiredColor = Color(nsColor: MemoryPalette.wired)
+private let compressedColor = Color(nsColor: MemoryPalette.compressed)
+
+private func average(_ values: [Double]) -> Double {
+    values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
+}
+
 private struct MemoryDetail: View {
     let model: AppModel
 
@@ -257,6 +265,27 @@ private struct MemoryDetail: View {
                              color: red)
                 }
             }
+            SectionTitle(text: tr("Memory by type", "Memória por tipo"))
+            HStack(spacing: 10) {
+                LegendDot(color: appColor, label: "App")
+                LegendDot(color: wiredColor, label: tr("Wired", "Fixa"))
+                LegendDot(color: compressedColor, label: tr("Compressed", "Comprimida"))
+                LegendDot(color: red, label: "Swap")
+                LegendDot(color: Color.primary.opacity(0.12), label: tr("Free", "Livre"))
+            }
+            // Stacked, as % of physical memory: smallest type at the bottom,
+            // largest on top; each color fills from the layer below up to its
+            // line, and the space above the top line is free memory.
+            let layers = [StackedHistoryChart.Layer(values: s.memoryAppHistory, color: appColor),
+                          .init(values: s.memoryWiredHistory, color: wiredColor),
+                          .init(values: s.memoryCompressedHistory, color: compressedColor),
+                          .init(values: s.memorySwapHistory, color: red)]
+                .map { StackedHistoryChart.Layer(values: $0.values.map { $0 / total }, color: $0.color) }
+                .sorted { average($0.values) < average($1.values) }
+            let peak = (0..<(layers.map(\.values.count).min() ?? 0))
+                .map { i in layers.reduce(0) { $0 + $1.values[$1.values.count - 1 - i] } }.max() ?? 0
+            StackedHistoryChart(layers: layers, top: max(1, peak * 1.05),
+                                label: { "\(Int(($0 * 100).rounded()))%" })
             SectionTitle(text: tr("Memory usage history", "Histórico de uso da memória"))
             HistoryChart(series: [.init(values: s.memoryHistory, color: Color(nsColor: .systemPurple))])
             SectionTitle(text: tr("Page in (blue) / out (red)", "Paginação entrada (azul) / saída (vermelho)"))
@@ -274,15 +303,27 @@ private struct MemoryDetail: View {
 
 private struct DiskDetail: View {
     let model: AppModel
+    @AppStorage("diskChartStyle") private var style = "pie"
+    @AppStorage("diskPieDetailed") private var detailed = false
 
     var body: some View {
         let s = model.snapshot
         VStack(alignment: .leading, spacing: 8) {
+            Picker("", selection: $style) {
+                Text(tr("Pie", "Pizza")).tag("pie")
+                Text(tr("Progress", "Barra")).tag("progress")
+            }
+            .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+
             if let d = s.disk {
-                MeterRow(label: d.name,
-                         value: "\(bytes(d.usedBytes)) / \(bytes(d.totalBytes))",
-                         fraction: d.usedFraction, color: blue)
-                InfoRow(label: tr("Free", "Livre"), value: bytes(d.freeBytes))
+                if style == "pie" {
+                    DiskPie(model: model, disk: d, detailed: $detailed)
+                } else {
+                    MeterRow(label: d.name,
+                             value: "\(bytes(d.usedBytes)) / \(bytes(d.totalBytes))",
+                             fraction: d.usedFraction, color: blue)
+                    InfoRow(label: tr("Free", "Livre"), value: bytes(d.freeBytes))
+                }
             }
             Grid(horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
@@ -299,6 +340,107 @@ private struct DiskDetail: View {
                                   .init(values: s.diskWriteHistory, color: red)],
                          maxValue: nil, minimumMax: 1_000_000, label: { rate($0) })
         }
+    }
+}
+
+/// Disk usage donut: Used / Free, or (Detailed) macOS, apps, swap, other,
+/// purgeable and free, measured on demand.
+private struct DiskPie: View {
+    let model: AppModel
+    let disk: SystemStatsSnapshot.Disk
+    @Binding var detailed: Bool
+
+    private struct Item {
+        var label: String
+        var value: UInt64
+        var color: Color
+    }
+
+    private static let freeColor = Color.primary.opacity(0.12)
+
+    var body: some View {
+        let items = detailed ? (model.diskBreakdown.map(Self.detailedItems) ?? []) : simpleItems
+        let total = Double(detailed ? (model.diskBreakdown?.total ?? disk.totalBytes) : disk.totalBytes)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(disk.name).font(.system(size: 12))
+                Spacer()
+                Text("\(bytes(disk.usedBytes)) / \(bytes(disk.totalBytes))")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+            }
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    DonutChart(slices: items.map { .init(value: Double($0.value), color: $0.color) },
+                               total: total)
+                    VStack(spacing: 0) {
+                        Text("\(Int((disk.usedFraction * 100).rounded()))%")
+                            .font(.system(size: 18, weight: .semibold).monospacedDigit())
+                        Text(tr("used", "usado")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 118, height: 118)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Picker("", selection: $detailed) {
+                        Text(tr("Simple", "Simples")).tag(false)
+                        Text(tr("Detailed", "Detalhado")).tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
+
+                    if detailed && model.diskBreakdown == nil {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(tr("Calculating…", "Calculando…"))
+                                .font(.system(size: 11)).foregroundStyle(.secondary)
+                        }
+                    }
+                    Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                        ForEach(items.indices, id: \.self) { i in
+                            let item = items[i]
+                            GridRow {
+                                LegendDot(color: item.color, label: item.label)
+                                Text("\(Int((Double(item.value) / max(1, total) * 100).rounded()))%")
+                                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                                    .gridColumnAlignment(.trailing)
+                                Text(bytes(item.value))
+                                    .font(.system(size: 11).monospacedDigit())
+                                    .gridColumnAlignment(.trailing)
+                            }
+                        }
+                    }
+                    if detailed, let b = model.diskBreakdown {
+                        HStack(spacing: 4) {
+                            Text(model.measuringDisk ? tr("Calculating…", "Calculando…")
+                                 : tr("Measured at ", "Medido às ")
+                                    + b.measuredAt.formatted(date: .omitted, time: .shortened))
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                            Button { model.measureDisk() } label: {
+                                Image(systemName: "arrow.clockwise").font(.system(size: 10))
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(model.measuringDisk)
+                            .help(tr("Measure again", "Medir de novo"))
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { if detailed && model.diskBreakdown == nil { model.measureDisk() } }
+        .onChange(of: detailed) { _, on in if on && model.diskBreakdown == nil { model.measureDisk() } }
+    }
+
+    private var simpleItems: [Item] {
+        [Item(label: tr("Used", "Usado"), value: disk.usedBytes, color: blue),
+         Item(label: tr("Free", "Livre"), value: disk.freeBytes, color: Self.freeColor)]
+    }
+
+    private static func detailedItems(_ b: DiskBreakdown) -> [Item] {
+        [Item(label: "macOS", value: b.system, color: Color(nsColor: .systemGray)),
+         Item(label: tr("Apps", "Apps"), value: b.applications, color: Color(nsColor: .systemPurple)),
+         Item(label: "Swap", value: b.swap, color: orange),
+         Item(label: tr("Files & other", "Arquivos e outros"), value: b.other, color: Color(nsColor: .systemTeal)),
+         Item(label: tr("Purgeable", "Liberável"), value: b.purgeable, color: blue.opacity(0.45)),
+         Item(label: tr("Free", "Livre"), value: b.free, color: freeColor)]
     }
 }
 

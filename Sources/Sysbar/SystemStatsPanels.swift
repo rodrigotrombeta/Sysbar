@@ -218,6 +218,11 @@ struct DiskStatsPanel: View {
             )
             StatsValueRow(label: tr("Free", "Livre"),
                           value: disk.map { SystemStatsSampler.formatBytes($0.freeBytes) } ?? "–")
+            StatsValueRow(label: tr("Used · Free", "Usado · Livre"),
+                          value: disk.map {
+                              let used = Int(($0.usedFraction * 100).rounded())
+                              return "\(used)% · \(100 - used)%"
+                          } ?? "–")
             StatsValueRow(label: tr("Read", "Leitura"),
                           value: SystemStatsSampler.formatRate(snapshot.diskIO?.read))
             StatsValueRow(label: tr("Write", "Escrita"),

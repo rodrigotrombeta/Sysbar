@@ -46,6 +46,7 @@ enum Preview {
         model.processes = processes.sample()
         model.expandedCores = true
         model.expandedGPUs = true
+        model.diskBreakdown = DiskBreakdown.measure()
         let snapshot = model.snapshot
 
         func config(_ metrics: [IconMetric], _ style: (IconMetric) -> IconStyle,

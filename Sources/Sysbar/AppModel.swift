@@ -20,6 +20,9 @@ final class AppModel {
     var expandedGPUs = false
     /// Tallest the main panel may be before it scrolls.
     var maxPanelHeight: CGFloat = 800
+    /// "Detailed" disk usage, measured on demand.
+    var diskBreakdown: DiskBreakdown?
+    var measuringDisk = false
 
     // Actions, wired by the AppDelegate.
     @ObservationIgnored var settingsChanged: () -> Void = {}
@@ -32,6 +35,19 @@ final class AppModel {
     @ObservationIgnored var closeDetail: (SystemStatKind) -> Void = { _ in }
     /// Mute mode changed: hover-opened details of muted sections close.
     @ObservationIgnored var muteChanged: () -> Void = {}
+
+    /// Measures the detailed disk usage off the main thread.
+    func measureDisk() {
+        guard !measuringDisk else { return }
+        measuringDisk = true
+        Task.detached(priority: .utility) {
+            let result = DiskBreakdown.measure()
+            await MainActor.run {
+                self.diskBreakdown = result ?? self.diskBreakdown
+                self.measuringDisk = false
+            }
+        }
+    }
 
     func moveSection(_ kind: SystemStatKind, to index: Int) {
         Settings.moveSection(kind, to: index)
