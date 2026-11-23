@@ -131,6 +131,7 @@ final class MainPanelController {
         self.placement = placement
         self.details = details
         self.statusButton = statusButton
+        context.showsMute = placement == .edge
         panel = HostedPanel(MainPanelView(model: model, context: context))
         context.onSectionFrames = { [weak self] frames in self?.panel.container.sectionFrames = frames }
         context.onTapSection = { [weak self] kind in
@@ -139,6 +140,8 @@ final class MainPanelController {
         }
         panel.container.onEnter = { [weak self] kind in
             guard let self, let kind else { return }
+            // Mute mode (edge panel only): no details on hover.
+            if self.placement == .edge, Settings.isMuted(kind) { return }
             details.hoverBegan(kind, from: self)
         }
         panel.container.onExit = { kind in
@@ -211,6 +214,7 @@ final class DetailManager {
         self.model = model
         model.toggleDetailPin = { [weak self] kind in self?.togglePin(kind, from: nil) }
         model.closeDetail = { [weak self] kind in self?.close(kind) }
+        model.muteChanged = { [weak self] in self?.closeMutedHover() }
     }
 
     var anyVisible: Bool { !windows.isEmpty }
@@ -259,6 +263,13 @@ final class DetailManager {
         model.pinnedDetails.removeAll { $0 == kind }
         if hoverKind == kind { hoverKind = nil }
         if insideDetail == kind { insideDetail = nil }
+    }
+
+    /// A section was muted while its details were open from hovering the
+    /// edge panel: close them (pinned ones stay).
+    private func closeMutedHover() {
+        guard anchor?.placement == .edge else { return }
+        for kind in Array(windows.keys) where Settings.isMuted(kind) && !isPinned(kind) { close(kind) }
     }
 
     /// The main popover closed: drop the hover preview, keep pinned ones.

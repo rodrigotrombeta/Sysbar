@@ -103,7 +103,7 @@ Click the menu bar icon to open the Sysbar panel. It stays open while you
 interact with it (click outside it, press Esc or click the icon again to close).
 
 **Header (always on top):** 📌 pin to the left/right screen edge (or unpin) ·
-Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings · quit.
+🔇 Mute all (edge panel only) · Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings · quit.
 
 **Sections:** CPU · GPU · Memory · Disk · Network · Top memory (top 5 processes).
 
@@ -111,6 +111,9 @@ Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings ·
 - **Click** a section to keep its details open (📌). Several can stay pinned at
   once; they are placed side by side without overlapping. Click again, or the
   ✕ in the detail panel, to close.
+- **Mute mode** (panel pinned to a screen edge): the 🔈 next to a section's `<<`
+  stops its details from opening on hover; *Mute all* (🔇 in the header) does
+  it for every section. Clicking a muted section still pins its details.
 
 | Details | Contents |
 |---|---|

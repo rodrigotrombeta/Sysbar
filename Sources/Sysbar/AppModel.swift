@@ -30,6 +30,18 @@ final class AppModel {
     @ObservationIgnored var checkForUpdates: () -> Void = {}
     @ObservationIgnored var toggleDetailPin: (SystemStatKind) -> Void = { _ in }
     @ObservationIgnored var closeDetail: (SystemStatKind) -> Void = { _ in }
+    /// Mute mode changed: hover-opened details of muted sections close.
+    @ObservationIgnored var muteChanged: () -> Void = {}
+
+    func toggleMute(_ kind: SystemStatKind) {
+        Settings.toggleMute(kind)
+        muteChanged()
+    }
+
+    func toggleMuteAll() {
+        Settings.setAllMuted(!Settings.allMuted)
+        muteChanged()
+    }
 
     /// A setting that affects AppKit (timer, window appearance, status icon)
     /// changed; SwiftUI views update on their own.

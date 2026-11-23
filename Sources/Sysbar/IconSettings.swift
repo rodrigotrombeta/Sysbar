@@ -212,6 +212,11 @@ final class SettingsStore {
     var interval: TimeInterval {
         didSet { defaults.set(interval, forKey: "refreshInterval") }
     }
+    /// Sections of the edge-pinned panel that don't open their details on
+    /// hover ("Mute mode"; clicking still pins them).
+    var mutedSections: Set<SystemStatKind> {
+        didSet { defaults.set(mutedSections.map(\.rawValue).sorted(), forKey: "mutedSections") }
+    }
     /// Mirror of SMAppService status (not persisted); refreshed after
     /// register/unregister and whenever Settings is shown.
     var openAtLogin = false
@@ -231,6 +236,7 @@ final class SettingsStore {
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
+        mutedSections = Set((d.stringArray(forKey: "mutedSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
         let v = d.double(forKey: "refreshInterval")
         interval = Settings.intervals.contains(v) ? v : 1
     }
@@ -341,6 +347,22 @@ enum Settings {
     static var pinSide: PinSide? {
         get { store.pinSide }
         set { store.pinSide = newValue }
+    }
+
+    static func isMuted(_ kind: SystemStatKind) -> Bool { store.mutedSections.contains(kind) }
+
+    static var allMuted: Bool { store.mutedSections.count == SystemStatKind.allCases.count }
+
+    static func toggleMute(_ kind: SystemStatKind) {
+        if store.mutedSections.contains(kind) {
+            store.mutedSections.remove(kind)
+        } else {
+            store.mutedSections.insert(kind)
+        }
+    }
+
+    static func setAllMuted(_ muted: Bool) {
+        store.mutedSections = muted ? Set(SystemStatKind.allCases) : []
     }
 
     static let intervals: [TimeInterval] = [0.5, 1, 2, 3, 5]

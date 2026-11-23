@@ -18,6 +18,8 @@ struct SectionFramesKey: PreferenceKey {
 final class PanelContext {
     var onSectionFrames: ([SystemStatKind: CGRect]) -> Void = { _ in }
     var onTapSection: (SystemStatKind) -> Void = { _ in }
+    /// The screen-edge panel shows the Mute mode buttons.
+    var showsMute = false
 }
 
 struct MainPanelView: View {
@@ -27,7 +29,7 @@ struct MainPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(model: model)
+            PanelHeader(model: model, showsMute: context.showsMute)
             Divider().padding(.horizontal, 10)
             ScrollView(.vertical, showsIndicators: contentHeight > model.maxPanelHeight) {
                 Group {
@@ -86,13 +88,28 @@ private struct SectionHost: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            Image(systemName: pinned ? "pin.fill" : "chevron.left.2")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(pinned ? Color.accentColor : Color.secondary.opacity(0.5))
-                .padding(.top, 9)
-                .padding(.trailing, 12)
-                .help(tr("Hover for details · click to keep them open",
-                         "Passe o mouse para ver detalhes · clique para fixá-los"))
+            HStack(spacing: 6) {
+                if context.showsMute {
+                    let muted = Settings.isMuted(kind)
+                    Button { model.toggleMute(kind) } label: {
+                        Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(muted ? Color.accentColor : Color.secondary.opacity(0.5))
+                            .frame(width: 14, height: 12)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help(muted ? tr("Unmute: show details on hover", "Reativar: mostrar detalhes ao passar o mouse")
+                                : tr("Mute: don't show details on hover", "Silenciar: não mostrar detalhes ao passar o mouse"))
+                }
+                Image(systemName: pinned ? "pin.fill" : "chevron.left.2")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(pinned ? Color.accentColor : Color.secondary.opacity(0.5))
+                    .help(tr("Hover for details · click to keep them open",
+                             "Passe o mouse para ver detalhes · clique para fixá-los"))
+            }
+            .padding(.top, 9)
+            .padding(.trailing, 12)
         }
         .background(RoundedRectangle(cornerRadius: 8)
             .fill(pinned ? Color.accentColor.opacity(0.08) : Color.clear)
@@ -129,6 +146,7 @@ struct TopProcessesPanel: View {
 
 private struct PanelHeader: View {
     let model: AppModel
+    let showsMute: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -149,6 +167,15 @@ private struct PanelHeader: View {
             .fixedSize()
             .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
 
+            if showsMute {
+                let allMuted = Settings.allMuted
+                Button(action: model.toggleMuteAll) {
+                    Image(systemName: allMuted ? "speaker.slash.fill" : "speaker.slash")
+                        .foregroundStyle(allMuted ? Color.accentColor : Color.primary)
+                }
+                .help(allMuted ? tr("Unmute all: show details on hover", "Reativar tudo: mostrar detalhes ao passar o mouse")
+                               : tr("Mute all: don't show details on hover", "Silenciar tudo: não mostrar detalhes ao passar o mouse"))
+            }
             Button(action: model.openActivityMonitor) { Image(systemName: "waveform.path.ecg") }
                 .help(tr("Open Activity Monitor", "Abrir Monitor de Atividade"))
             Button(action: model.cycleAppearance) { Image(systemName: Settings.appearance.symbol) }
