@@ -215,21 +215,7 @@ private struct PanelHeader: View {
                 .fixedSize()
                 .layoutPriority(1)
             Spacer(minLength: 4)
-            Menu {
-                Button(tr("Pin to left edge", "Fixar na lateral esquerda")) { model.pin(.left) }
-                Button(tr("Pin to right edge", "Fixar na lateral direita")) { model.pin(.right) }
-                if Settings.pinSide != nil {
-                    Divider()
-                    Button(tr("Unpin", "Desafixar")) { model.pin(nil) }
-                }
-            } label: {
-                Image(systemName: Settings.pinSide == nil ? "pin" : "pin.fill")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .textLayer()
-            .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
+            PinButton(model: model)
 
             if showsMute {
                 OpacityButton(model: model)
@@ -407,5 +393,67 @@ private struct SettingsView: View {
         .padding(14)
         .frame(width: panelWidth, alignment: .leading)
         .onAppear { LoginItem.refresh() }
+    }
+}
+
+/// Header pin button: a small panel with "Pin to left/right edge" and,
+/// beside each, Float / Full to pin in that style right away.
+private struct PinButton: View {
+    let model: AppModel
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Image(systemName: Settings.pinSide == nil ? "pin" : "pin.fill")
+        }
+        .buttonStyle(.borderless)
+        .textLayer()
+        .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                row(tr("Pin to left edge", "Fixar na lateral esquerda"), .left)
+                row(tr("Pin to right edge", "Fixar na lateral direita"), .right)
+                if Settings.pinSide != nil {
+                    Divider().gridCellColumns(2)
+                    Button(tr("Unpin", "Desafixar")) { choose(nil, full: Settings.pinFull) }
+                        .buttonStyle(.borderless)
+                }
+            }
+            .font(.system(size: 12))
+            .padding(12)
+            // The popover is its own window: don't inherit the panel's fading.
+            .foregroundStyle(Color.primary)
+            .environment(\.textOpacity, 1)
+            .environment(\.graphicsOpacity, 1)
+        }
+    }
+
+    private func row(_ label: String, _ side: PinSide) -> some View {
+        GridRow {
+            Text(label)
+            HStack(spacing: 4) {
+                option(tr("Float", "Flutuante"), side: side, full: false)
+                option(tr("Full", "Altura toda"), side: side, full: true)
+            }
+        }
+    }
+
+    private func option(_ title: String, side: PinSide, full: Bool) -> some View {
+        let current = Settings.pinSide == side && Settings.pinFull == full
+        return Button { choose(side, full: full) } label: {
+            Text(title)
+                .font(.system(size: 11, weight: current ? .semibold : .regular))
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(current ? Color.accentColor.opacity(0.25) : Color.primary.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+        .help(full ? tr("The panel fills the whole side of the screen.", "O painel ocupa a lateral inteira da tela.")
+                   : tr("The panel floats at its content height.", "O painel flutua com a altura do conteúdo."))
+    }
+
+    private func choose(_ side: PinSide?, full: Bool) {
+        open = false
+        Settings.pinFull = full
+        model.pin(side)
     }
 }
