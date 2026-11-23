@@ -39,6 +39,7 @@ struct DetailContainer: View {
             HStack(spacing: 10) {
                 Text(kind.detailTitle).font(.system(size: 13, weight: .bold))
                 Spacer()
+                if pinned { OpacityButton(model: model, key: kind.rawValue) }
                 Button { model.toggleDetailPin(kind) } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
                 }
@@ -576,5 +577,37 @@ struct WindowDragArea: NSViewRepresentable {
         }
 
         override func mouseUp(with event: NSEvent) { mouseDownEvent = nil }
+    }
+}
+
+/// Header button of a pinned panel: opens a slider for that panel's opacity.
+struct OpacityButton: View {
+    let model: AppModel
+    let key: String
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: { Image(systemName: "circle.righthalf.filled") }
+            .buttonStyle(.borderless)
+            .help(tr("Opacity of this panel", "Opacidade deste painel"))
+            .popover(isPresented: $open, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(tr("Opacity", "Opacidade")).font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Text("\(Int((Settings.opacity(for: key) * 100).rounded()))%")
+                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    Slider(value: model.opacity(for: key), in: 0.3...1, step: 0.05)
+                        .controlSize(.small)
+                        .frame(width: 170)
+                    Button(tr("Use the default (Settings)", "Usar o padrão (Configurações)")) {
+                        model.resetOpacity(for: key)
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+                }
+                .padding(12)
+            }
     }
 }

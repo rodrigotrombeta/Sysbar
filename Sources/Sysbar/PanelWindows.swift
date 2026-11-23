@@ -101,9 +101,15 @@ final class HostedPanel {
     var isVisible: Bool { window.isVisible }
     var fittingSize: NSSize { host.fittingSize }
 
+    /// Key of this panel's own opacity ("edge" or a section kind); nil =
+    /// the global opacity.
+    var opacityKey: String? {
+        didSet { applyAppearance() }
+    }
+
     func applyAppearance() {
         window.appearance = Settings.appearance.nsAppearance
-        window.alphaValue = Settings.panelOpacity
+        window.alphaValue = Settings.opacity(for: opacityKey)
     }
 
     func setFrame(_ frame: NSRect) {
@@ -136,6 +142,7 @@ final class MainPanelController {
         self.statusButton = statusButton
         context.showsMute = placement == .edge
         panel = HostedPanel(MainPanelView(model: model, context: context))
+        if placement == .edge { panel.opacityKey = "edge" }
         context.onSectionFrames = { [weak self] frames in self?.panel.container.sectionFrames = frames }
         context.onTapSection = { [weak self] kind in
             guard let self else { return }
@@ -315,6 +322,7 @@ final class DetailManager {
             return
         }
         let panel = HostedPanel(DetailContainer(model: model, kind: kind))
+        panel.opacityKey = kind.rawValue
         panel.container.trackWholeView = true
         panel.container.onEnter = { [weak self] _ in
             self?.insideDetail = kind

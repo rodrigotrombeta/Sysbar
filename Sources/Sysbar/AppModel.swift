@@ -118,6 +118,17 @@ final class AppModel {
         Binding(get: { Settings.panelOpacity }, set: { Settings.panelOpacity = $0; self.bump() })
     }
 
+    /// One panel's opacity ("edge" or a section kind).
+    func opacity(for key: String) -> Binding<Double> {
+        Binding(get: { Settings.opacity(for: key) },
+                set: { Settings.setOpacity($0, for: key); self.bump() })
+    }
+
+    func resetOpacity(for key: String) {
+        Settings.setOpacity(nil, for: key)
+        bump()
+    }
+
     var autoCheckUpdates: Binding<Bool> {
         Binding(get: { Settings.autoCheckUpdates }, set: { Settings.autoCheckUpdates = $0 })
     }

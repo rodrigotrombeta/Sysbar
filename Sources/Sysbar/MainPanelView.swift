@@ -221,6 +221,7 @@ private struct PanelHeader: View {
             .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
 
             if showsMute {
+                OpacityButton(model: model, key: "edge")
                 let allMuted = Settings.allMuted
                 Button(action: model.toggleMuteAll) {
                     Image(systemName: allMuted ? "speaker.slash.fill" : "speaker.slash")

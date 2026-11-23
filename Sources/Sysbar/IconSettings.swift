@@ -203,6 +203,10 @@ final class SettingsStore {
     var panelOpacity: Double {
         didSet { defaults.set(panelOpacity, forKey: "panelOpacity") }
     }
+    /// Per-panel overrides of `panelOpacity` ("edge" or a section kind).
+    var panelOpacities: [String: Double] {
+        didSet { defaults.set(panelOpacities, forKey: "panelOpacities") }
+    }
     var language: Language {
         didSet { defaults.set(language.rawValue, forKey: "language") }
     }
@@ -242,6 +246,7 @@ final class SettingsStore {
         showLabel = d.object(forKey: "iconShowLabel") as? Bool ?? true
         appearance = d.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system
         panelOpacity = min(1, max(0.3, d.object(forKey: "panelOpacity") as? Double ?? 1))
+        panelOpacities = d.dictionary(forKey: "panelOpacities") as? [String: Double] ?? [:]
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
@@ -338,6 +343,16 @@ enum Settings {
     static var panelOpacity: Double {
         get { store.panelOpacity }
         set { store.panelOpacity = min(1, max(0.3, newValue)) }
+    }
+
+    /// Opacity of one panel: its own value if set, else the global one.
+    static func opacity(for key: String?) -> Double {
+        key.flatMap { store.panelOpacities[$0] } ?? store.panelOpacity
+    }
+
+    /// nil removes the panel's own value (back to the global one).
+    static func setOpacity(_ value: Double?, for key: String) {
+        store.panelOpacities[key] = value.map { min(1, max(0.3, $0)) }
     }
 
     static var language: Language {
