@@ -51,6 +51,7 @@ struct DetailContainer: View {
                 }
             }
             .buttonStyle(.borderless)
+            .controlsLayer()
             // Drag the title row to move the panel anywhere; moving a hover
             // preview pins it, so it stays where it was dropped.
             .background(WindowDragArea {

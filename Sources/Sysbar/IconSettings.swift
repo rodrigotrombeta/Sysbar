@@ -482,7 +482,9 @@ struct OpacitySet: Codable, Equatable {
     var sync = false
 
     static let backgroundRange: ClosedRange<Double> = 0...1
-    static let contentRange: ClosedRange<Double> = 0.2...1
+    /// Text and graphics can go to 0 (e.g. only the charts, or nothing but
+    /// the background); the header buttons and Settings stay visible.
+    static let contentRange: ClosedRange<Double> = 0...1
     static let syncRange: ClosedRange<Double> = 0.3...1
 
     init() {}

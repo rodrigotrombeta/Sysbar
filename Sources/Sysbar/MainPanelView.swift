@@ -30,11 +30,13 @@ struct MainPanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             PanelHeader(model: model, showsMute: context.showsMute)
+                .controlsLayer()
             Divider().padding(.horizontal, 10)
             ScrollView(.vertical, showsIndicators: contentHeight > model.maxPanelHeight) {
                 Group {
                     if model.showSettings {
                         SettingsView(model: model)
+                            .unfaded()
                     } else {
                         sections
                     }
@@ -407,7 +409,6 @@ private struct PinButton: View {
             Image(systemName: Settings.pinSide == nil ? "pin" : "pin.fill")
         }
         .buttonStyle(.borderless)
-        .textLayer()
         .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
         .popover(isPresented: $open, arrowEdge: .bottom) {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {

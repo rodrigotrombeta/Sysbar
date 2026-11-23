@@ -35,6 +35,20 @@ private struct PanelOpacityModifier: ViewModifier {
     }
 }
 
+/// Header buttons (pin, opacity, settings…) never fade below 35%, and
+/// Settings not at all, so the controls to undo a 0% stay reachable.
+private struct ControlsLayer: ViewModifier {
+    let minimum: Double
+    @Environment(\.textOpacity) private var opacity
+    func body(content: Content) -> some View {
+        let o = max(opacity, minimum)
+        content
+            .foregroundStyle(Color.primary.opacity(o))
+            .environment(\.textOpacity, o)
+            .environment(\.graphicsOpacity, minimum >= 1 ? 1 : o)
+    }
+}
+
 private struct TextLayer: ViewModifier {
     @Environment(\.textOpacity) private var opacity
     func body(content: Content) -> some View { content.opacity(opacity) }
@@ -49,6 +63,10 @@ extension View {
     /// Applies the text and graphics opacity: global, or a detail panel's
     /// own (key = section kind) when it's set to Separate.
     func panelOpacity(_ key: String? = nil) -> some View { modifier(PanelOpacityModifier(key: key)) }
+    /// Header controls: at least 35% visible.
+    func controlsLayer() -> some View { modifier(ControlsLayer(minimum: 0.35)) }
+    /// Settings: never faded.
+    func unfaded() -> some View { modifier(ControlsLayer(minimum: 1)) }
     /// Text with its own color (not faded by the foreground style).
     func textLayer() -> some View { modifier(TextLayer()) }
     /// Charts, bars and pies.
