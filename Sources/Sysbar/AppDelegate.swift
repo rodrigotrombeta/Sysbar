@@ -153,6 +153,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Popover
 
     @objc private func togglePopover() {
+        // Pinned to a screen edge: the icon unpins and closes the panel.
+        if Settings.pinSide != nil {
+            pin(nil)
+            return
+        }
         if popover.isVisible {
             closePopover()
         } else if Date().timeIntervalSince(lastOutsideClose) > 0.5 {
