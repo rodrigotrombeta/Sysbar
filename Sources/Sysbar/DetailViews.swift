@@ -39,7 +39,7 @@ struct DetailContainer: View {
             HStack(spacing: 10) {
                 Text(kind.detailTitle).font(.system(size: 13, weight: .bold))
                 Spacer()
-                if pinned { OpacityButton(model: model, key: kind.rawValue) }
+                if pinned { OpacityButton(model: model) }
                 Button { model.toggleDetailPin(kind) } label: {
                     Image(systemName: pinned ? "pin.fill" : "pin")
                 }
@@ -69,7 +69,7 @@ struct DetailContainer: View {
         }
         .padding(14)
         .frame(width: detailWidth, alignment: .leading)
-        .panelOpacity(kind.rawValue)
+        .panelOpacity()
     }
 }
 
@@ -630,28 +630,21 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
-/// Header button of a pinned panel: opens a slider for that panel's opacity.
+/// Header button of a pinned panel: opens the opacity controls (the same
+/// global values as in Settings).
 struct OpacityButton: View {
     let model: AppModel
-    let key: String
     @State private var open = false
 
     var body: some View {
         Button { open.toggle() } label: { Image(systemName: "drop.halffull") }
             .buttonStyle(.borderless)
-            .help(tr("Opacity of this panel", "Opacidade deste painel"))
+            .help(tr("Opacity", "Opacidade"))
             .popover(isPresented: $open, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(tr("Opacity of this panel", "Opacidade deste painel"))
+                    Text(tr("Opacity (all panels)", "Opacidade (todos os painéis)"))
                         .font(.system(size: 12, weight: .semibold))
-                    OpacityControls(value: model.opacity(for: key))
-                    if Settings.hasOwnOpacity(key) {
-                        Button(tr("Use the default (Settings)", "Usar o padrão (Configurações)")) {
-                            model.resetOpacity(for: key)
-                        }
-                        .buttonStyle(.link)
-                        .font(.system(size: 11))
-                    }
+                    OpacityControls(value: model.opacity)
                 }
                 .padding(12)
                 // The popover is its own window: don't inherit the panel's fading.

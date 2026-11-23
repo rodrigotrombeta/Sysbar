@@ -50,7 +50,7 @@ struct MainPanelView: View {
         // "Pin full": the edge window spans the screen height; keep the
         // content at the top.
         .frame(maxHeight: context.showsMute && Settings.pinFull ? .infinity : nil, alignment: .top)
-        .panelOpacity(context.showsMute ? "edge" : nil)
+        .panelOpacity()
         .onPreferenceChange(SectionFramesKey.self) { context.onSectionFrames($0) }
     }
 
@@ -232,7 +232,7 @@ private struct PanelHeader: View {
             .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
 
             if showsMute {
-                OpacityButton(model: model, key: "edge")
+                OpacityButton(model: model)
                 let allMuted = Settings.allMuted
                 Button(action: model.toggleMuteAll) {
                     Image(systemName: allMuted ? "speaker.slash.fill" : "speaker.slash")
@@ -385,7 +385,7 @@ private struct SettingsView: View {
                          "Flutuante: o painel fixado flutua com a altura do conteúdo. Altura toda: ocupa a lateral inteira da tela."))
             }
             Text(tr("Opacity", "Opacidade")).font(.system(size: 12))
-            OpacityControls(value: model.opacity(for: nil))
+            OpacityControls(value: model.opacity)
                 .padding(.leading, 8)
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)

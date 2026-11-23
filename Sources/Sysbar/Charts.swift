@@ -25,9 +25,8 @@ extension EnvironmentValues {
 /// fades through the foreground style; explicitly colored text uses
 /// `.textLayer()`, charts `.graphicsLayer()`.
 private struct PanelOpacityModifier: ViewModifier {
-    let key: String?
     func body(content: Content) -> some View {
-        let o = Settings.opacity(for: key)
+        let o = Settings.opacity
         content
             .foregroundStyle(Color.primary.opacity(o.text))
             .environment(\.textOpacity, o.text)
@@ -46,9 +45,8 @@ private struct GraphicsLayer: ViewModifier {
 }
 
 extension View {
-    /// Applies a panel's text and graphics opacity ("edge", a section kind,
-    /// or nil for the global values).
-    func panelOpacity(_ key: String?) -> some View { modifier(PanelOpacityModifier(key: key)) }
+    /// Applies the text and graphics opacity (global, all panels).
+    func panelOpacity() -> some View { modifier(PanelOpacityModifier()) }
     /// Text with its own color (not faded by the foreground style).
     func textLayer() -> some View { modifier(TextLayer()) }
     /// Charts, bars and pies.
