@@ -6,7 +6,7 @@
 import AppKit
 import Darwin
 
-struct ProcessRow: Identifiable, Sendable {
+struct ProcessRow: Identifiable, Sendable, Codable {
     var id: pid_t { pid }
     let pid: pid_t
     let name: String
@@ -15,7 +15,7 @@ struct ProcessRow: Identifiable, Sendable {
     let cpu: Double
 }
 
-struct ProcessSnapshot: Sendable {
+struct ProcessSnapshot: Sendable, Codable {
     var topMemory: [ProcessRow] = []
     var topCPU: [ProcessRow] = []
 }

@@ -86,12 +86,12 @@ final class HostedPanel {
         effect.blendingMode = .behindWindow
         effect.state = .active
         effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
+        effect.layer?.cornerRadius = cornerRadius
         effect.layer?.masksToBounds = true
         effect.autoresizingMask = [.width, .height]
         host.autoresizingMask = [.width, .height]
         container.wantsLayer = true
-        container.layer?.cornerRadius = 12
+        container.layer?.cornerRadius = cornerRadius
         container.addSubview(effect)
         effect.addSubview(host)
         window.contentView = container
@@ -100,6 +100,16 @@ final class HostedPanel {
 
     var isVisible: Bool { window.isVisible }
     var fittingSize: NSSize { host.fittingSize }
+
+    /// 0 for the full-height edge panel, which touches the screen edges.
+    var cornerRadius: CGFloat = 12 {
+        didSet {
+            guard cornerRadius != oldValue else { return }
+            container.layer?.cornerRadius = cornerRadius
+            container.subviews.first?.layer?.cornerRadius = cornerRadius
+            window.invalidateShadow()
+        }
+    }
 
     /// Key of this panel's own opacity ("edge" or a section kind); nil =
     /// the global opacity.
@@ -228,8 +238,16 @@ final class MainPanelController {
             frame.origin.x = min(max(frame.origin.x, visible.minX + 6), visible.maxX - size.width - 6)
         case .edge:
             let side = Settings.pinSide ?? .right
-            frame.origin.x = side == .left ? visible.minX + 8 : visible.maxX - size.width - 8
-            frame.origin.y = visible.midY - size.height / 2
+            if Settings.pinFull {
+                // Whole height of the screen, flush with its edge.
+                frame.size.height = visible.height
+                frame.origin.x = side == .left ? visible.minX : visible.maxX - size.width
+                frame.origin.y = visible.minY
+            } else {
+                frame.origin.x = side == .left ? visible.minX + 8 : visible.maxX - size.width - 8
+                frame.origin.y = visible.midY - size.height / 2
+            }
+            panel.cornerRadius = Settings.pinFull ? 0 : 12
         }
         frame.origin.y = max(frame.origin.y, visible.minY + 6)
         panel.setFrame(frame.integral)

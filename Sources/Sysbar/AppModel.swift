@@ -20,6 +20,8 @@ final class AppModel {
     var expandedGPUs = false
     /// Tallest the main panel may be before it scrolls.
     var maxPanelHeight: CGFloat = 800
+    /// Root helper that lists every user's processes (see ProcessHelper).
+    var allProcesses: ProcessHelperClient.State = .off
     /// "Detailed" disk usage, measured on demand.
     var diskBreakdown: DiskBreakdown?
     var measuringDisk = false
@@ -33,6 +35,7 @@ final class AppModel {
     @ObservationIgnored var checkForUpdates: () -> Void = {}
     @ObservationIgnored var toggleDetailPin: (SystemStatKind) -> Void = { _ in }
     @ObservationIgnored var closeDetail: (SystemStatKind) -> Void = { _ in }
+    @ObservationIgnored var showAllProcesses: (Bool) -> Void = { _ in }
     /// Mute mode changed: hover-opened details of muted sections close.
     @ObservationIgnored var muteChanged: () -> Void = {}
 
@@ -128,6 +131,10 @@ final class AppModel {
     func resetOpacity(for key: String) {
         Settings.setOpacity(nil, for: key)
         bump()
+    }
+
+    var pinFull: Binding<Bool> {
+        Binding(get: { Settings.pinFull }, set: { Settings.pinFull = $0 })
     }
 
     var diskDetailedInIcon: Binding<Bool> {

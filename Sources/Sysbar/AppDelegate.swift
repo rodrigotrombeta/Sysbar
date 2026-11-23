@@ -11,6 +11,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sampler = SystemStatsSampler()
     private let processSampler = ProcessSampler()
+    private let processHelper = ProcessHelperClient()
     private let model = AppModel()
     private let updater = UpdateChecker()
     private var statusItem: NSStatusItem!
@@ -48,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.settingsChanged = { [weak self] in self?.applySettings() }
         model.pin = { [weak self] side in self?.pin(side) }
         model.openActivityMonitor = { [weak self] in self?.openActivityMonitor() }
+        processHelper.onStateChange = { [weak self] state in self?.model.allProcesses = state }
+        model.showAllProcesses = { [weak self] on in
+            guard let self else { return }
+            on ? self.processHelper.start() : self.processHelper.stop()
+        }
         model.quit = { NSApp.terminate(nil) }
         model.checkForUpdates = { [weak self] in
             self?.closePopover()
@@ -92,7 +98,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.snapshot = snapshot
         // Process scanning only while something shows processes.
         if panelsVisible {
-            model.processes = processSampler.sample()
+            if processHelper.isOn {
+                processHelper.sample { [weak self] snapshot in
+                    if let snapshot { self?.model.processes = snapshot }
+                }
+            } else {
+                model.processes = processSampler.sample()
+            }
         }
         updateIcon()
     }
@@ -125,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = model.maxPanelHeight
             _ = Settings.language
             _ = Settings.pinSide
+            _ = Settings.pinFull
             _ = Settings.sectionOrder
         } onChange: { [weak self] in
             DispatchQueue.main.async {
@@ -136,7 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func fitPanels() {
         let visibleHeight = (popover.isVisible ? popover.screen : edgePanel.screen).visibleFrame.height
-        let maxHeight = max(300, visibleHeight - 70)
+        // A full-height edge panel only leaves room for its header.
+        let fullEdge = !popover.isVisible && edgePanel.isVisible && Settings.pinFull
+        let maxHeight = max(300, visibleHeight - (fullEdge ? 40 : 70))
         if abs(model.maxPanelHeight - maxHeight) > 1 { model.maxPanelHeight = maxHeight }
         if popover.isVisible { popover.layout() }
         if edgePanel.isVisible { edgePanel.layout() }

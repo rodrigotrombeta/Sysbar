@@ -203,6 +203,11 @@ final class SettingsStore {
     var panelOpacity: Double {
         didSet { defaults.set(panelOpacity, forKey: "panelOpacity") }
     }
+    /// Edge panel spans the whole height of the screen (square corners)
+    /// instead of floating at its content height.
+    var pinFull: Bool {
+        didSet { defaults.set(pinFull, forKey: "pinFull") }
+    }
     /// Show the detailed disk breakdown in the menu bar disk pie/bar.
     var diskDetailedInIcon: Bool {
         didSet { defaults.set(diskDetailedInIcon, forKey: "diskDetailedInIcon") }
@@ -252,6 +257,7 @@ final class SettingsStore {
         panelOpacity = min(1, max(0.3, d.object(forKey: "panelOpacity") as? Double ?? 1))
         panelOpacities = d.dictionary(forKey: "panelOpacities") as? [String: Double] ?? [:]
         diskDetailedInIcon = d.bool(forKey: "diskDetailedInIcon")
+        pinFull = d.bool(forKey: "pinFull")
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
@@ -348,6 +354,11 @@ enum Settings {
     static var panelOpacity: Double {
         get { store.panelOpacity }
         set { store.panelOpacity = min(1, max(0.3, newValue)) }
+    }
+
+    static var pinFull: Bool {
+        get { store.pinFull }
+        set { store.pinFull = newValue }
     }
 
     static var diskDetailedInIcon: Bool {

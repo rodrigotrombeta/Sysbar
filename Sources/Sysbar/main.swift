@@ -5,6 +5,10 @@ MainActor.assumeIsolated {
     // `Sysbar --preview <dir>` writes PNGs of every icon style and the stats
     // panel, then exits (handy for checking the drawing without the menubar).
     let args = CommandLine.arguments
+    // Root helper for "show all processes" (see ProcessHelper.swift).
+    if let flag = args.firstIndex(of: "--process-helper"), flag + 2 < args.count {
+        ProcessHelper.run(request: args[flag + 1], data: args[flag + 2])
+    }
     if let flag = args.firstIndex(of: "--preview"), flag + 1 < args.count {
         Preview.write(to: URL(fileURLWithPath: args[flag + 1]))
         exit(0)

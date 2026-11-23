@@ -499,11 +499,47 @@ private struct ProcessesDetail: View {
             ProcessList(rows: Array(model.processes.topMemory.prefix(15)), metric: .memory, total: total)
             SectionTitle(text: "CPU")
             ProcessList(rows: Array(model.processes.topCPU.prefix(10)), metric: .cpu, total: total)
-            Text(tr("Processes of other users (e.g. WindowServer) need admin rights and aren't listed.",
-                    "Processos de outros usuários (ex.: WindowServer) exigem permissão de administrador e não aparecem."))
-                .font(.system(size: 10)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            AllProcessesNote(model: model)
         }
+    }
+}
+
+/// Footer of the process lists: other users' processes need admin rights;
+/// a button starts the root helper (password prompt) to list them too.
+private struct AllProcessesNote: View {
+    let model: AppModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            switch model.allProcesses {
+            case .on:
+                note(tr("Showing all processes, including other users' (admin).",
+                        "Mostrando todos os processos, inclusive de outros usuários (admin)."))
+                Button(tr("Stop", "Parar")) { model.showAllProcesses(false) }
+                    .controlSize(.small)
+            case .starting:
+                ProgressView().controlSize(.small)
+                note(tr("Waiting for the administrator password…", "Aguardando a senha de administrador…"))
+            case .off, .failed:
+                VStack(alignment: .leading, spacing: 2) {
+                    note(tr("Processes of other users (e.g. WindowServer) need admin rights and aren't listed.",
+                            "Processos de outros usuários (ex.: WindowServer) exigem permissão de administrador e não aparecem."))
+                    if case .failed(let message) = model.allProcesses, !message.isEmpty {
+                        Text(message).font(.system(size: 10)).foregroundStyle(red)
+                    }
+                }
+                Button(tr("Admin rights…", "Permissão de admin…")) { model.showAllProcesses(true) }
+                    .controlSize(.small)
+                    .help(tr("Asks for your administrator password to list every process. Asked again after Sysbar restarts.",
+                             "Pede a senha de administrador para listar todos os processos. É pedida de novo quando o Sysbar reinicia."))
+            }
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.system(size: 10)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -599,7 +635,7 @@ struct OpacityButton: View {
     @State private var open = false
 
     var body: some View {
-        Button { open.toggle() } label: { Image(systemName: "circle.righthalf.filled") }
+        Button { open.toggle() } label: { Image(systemName: "drop.halffull") }
             .buttonStyle(.borderless)
             .help(tr("Opacity of this panel", "Opacidade deste painel"))
             .popover(isPresented: $open, arrowEdge: .bottom) {

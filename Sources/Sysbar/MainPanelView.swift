@@ -47,6 +47,9 @@ struct MainPanelView: View {
             .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
         }
         .frame(width: panelWidth)
+        // "Pin full": the edge window spans the screen height; keep the
+        // content at the top.
+        .frame(maxHeight: context.showsMute && Settings.pinFull ? .infinity : nil, alignment: .top)
         .onPreferenceChange(SectionFramesKey.self) { context.onSectionFrames($0) }
     }
 
@@ -204,7 +207,9 @@ private struct PanelHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("Sysbar").font(.system(size: 13, weight: .bold))
-            Spacer()
+                .fixedSize()
+                .layoutPriority(1)
+            Spacer(minLength: 4)
             Menu {
                 Button(tr("Pin to left edge", "Fixar na lateral esquerda")) { model.pin(.left) }
                 Button(tr("Pin to right edge", "Fixar na lateral direita")) { model.pin(.right) }
@@ -230,8 +235,12 @@ private struct PanelHeader: View {
                 .help(allMuted ? tr("Unmute all: show details on hover", "Reativar tudo: mostrar detalhes ao passar o mouse")
                                : tr("Mute all: don't show details on hover", "Silenciar tudo: não mostrar detalhes ao passar o mouse"))
             }
-            Button(action: model.openActivityMonitor) { Image(systemName: "waveform.path.ecg") }
-                .help(tr("Open Activity Monitor", "Abrir Monitor de Atividade"))
+            // The edge panel's header has the opacity and Mute all buttons
+            // too; Activity Monitor stays in the menu bar panel only.
+            if !showsMute {
+                Button(action: model.openActivityMonitor) { Image(systemName: "waveform.path.ecg") }
+                    .help(tr("Open Activity Monitor", "Abrir Monitor de Atividade"))
+            }
             Button(action: model.cycleAppearance) { Image(systemName: Settings.appearance.symbol) }
                 .help(tr("Appearance: ", "Aparência: ") + Settings.appearance.title)
             Button { model.showSettings.toggle() } label: {
@@ -356,6 +365,17 @@ private struct SettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .frame(width: 120)
+            }
+            LabeledContent(tr("Pinned panel", "Painel fixado")) {
+                Picker("", selection: model.pinFull) {
+                    Text(tr("Float", "Flutuante")).tag(false)
+                    Text(tr("Full height", "Altura toda")).tag(true)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 170)
+                .help(tr("Float: the pinned panel floats at its content height. Full height: it fills the whole side of the screen.",
+                         "Flutuante: o painel fixado flutua com a altura do conteúdo. Altura toda: ocupa a lateral inteira da tela."))
             }
             LabeledContent(tr("Opacity", "Opacidade")) {
                 HStack(spacing: 6) {
