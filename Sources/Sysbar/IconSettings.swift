@@ -1,6 +1,7 @@
 // What the status-bar icon shows and how, persisted in UserDefaults.
 
 import AppKit
+import Observation
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable, Identifiable {
@@ -167,46 +168,106 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
+/// Every user setting, loaded once from UserDefaults and written back on
+/// change. It is @Observable, so SwiftUI views that read a setting (directly
+/// or through `tr()`) update in place when it changes, with no identity reset.
+@Observable
+final class SettingsStore {
+    static let shared = SettingsStore()
+
+    @ObservationIgnored private let defaults = UserDefaults.standard
+
+    /// Metrics shown in the menu bar, as saved (any order).
+    var shownMetrics: [IconMetric] {
+        didSet { defaults.set(shownMetrics.map(\.rawValue), forKey: "iconMetrics") }
+    }
+    /// Left-to-right order of every metric in the menu bar (shown or not).
+    var order: [IconMetric] {
+        didSet { defaults.set(order.map(\.rawValue), forKey: "iconOrder") }
+    }
+    /// Style per metric raw value.
+    var styles: [String: String] {
+        didSet { defaults.set(styles, forKey: "iconStyles") }
+    }
+    /// Color mode per metric raw value.
+    var colorModes: [String: String] {
+        didSet { defaults.set(colorModes, forKey: "iconColorModes") }
+    }
+    var showLabel: Bool {
+        didSet { defaults.set(showLabel, forKey: "iconShowLabel") }
+    }
+    var appearance: AppAppearance {
+        didSet { defaults.set(appearance.rawValue, forKey: "appAppearance") }
+    }
+    var language: Language {
+        didSet { defaults.set(language.rawValue, forKey: "language") }
+    }
+    var autoCheckUpdates: Bool {
+        didSet { defaults.set(autoCheckUpdates, forKey: "autoCheckUpdates") }
+    }
+    /// nil = not pinned.
+    var pinSide: PinSide? {
+        didSet { defaults.set(pinSide?.rawValue, forKey: "pinSide") }
+    }
+    var interval: TimeInterval {
+        didSet { defaults.set(interval, forKey: "refreshInterval") }
+    }
+    /// Mirror of SMAppService status (not persisted); refreshed after
+    /// register/unregister and whenever Settings is shown.
+    var openAtLogin = false
+
+    private init() {
+        let d = UserDefaults.standard
+        shownMetrics = (d.stringArray(forKey: "iconMetrics") ?? [IconMetric.cpu.rawValue])
+            .compactMap(IconMetric.init(rawValue:))
+        let saved = (d.stringArray(forKey: "iconOrder") ?? []).compactMap(IconMetric.init(rawValue:))
+        var seen = Set<IconMetric>()
+        let unique = saved.filter { seen.insert($0).inserted }
+        order = unique + IconMetric.allCases.filter { !seen.contains($0) }
+        styles = d.dictionary(forKey: "iconStyles") as? [String: String] ?? [:]
+        colorModes = d.dictionary(forKey: "iconColorModes") as? [String: String] ?? [:]
+        showLabel = d.object(forKey: "iconShowLabel") as? Bool ?? true
+        appearance = d.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system
+        language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
+        autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
+        pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
+        let v = d.double(forKey: "refreshInterval")
+        interval = Settings.intervals.contains(v) ? v : 1
+    }
+}
+
+/// Static facade over `SettingsStore.shared`, so non-UI code keeps reading
+/// `Settings.x`; reads from a view body are still observed.
 enum Settings {
+    private static var store: SettingsStore { .shared }
     private static let defaults = UserDefaults.standard
 
     static var metrics: [IconMetric] {
         get {
-            let raw = defaults.stringArray(forKey: "iconMetrics") ?? [IconMetric.cpu.rawValue]
-            let parsed = raw.compactMap(IconMetric.init(rawValue:))
+            let shown = store.shownMetrics
             // Shown in the user's chosen order, regardless of toggle order.
-            return order.filter(parsed.contains)
+            return store.order.filter(shown.contains)
         }
-        set { defaults.set(newValue.map(\.rawValue), forKey: "iconMetrics") }
+        set { store.shownMetrics = newValue }
     }
 
-    /// Left-to-right order of every metric in the menu bar (shown or not).
     static var order: [IconMetric] {
-        get {
-            let saved = (defaults.stringArray(forKey: "iconOrder") ?? [])
-                .compactMap(IconMetric.init(rawValue:))
-            var seen = Set<IconMetric>()
-            let unique = saved.filter { seen.insert($0).inserted }
-            return unique + IconMetric.allCases.filter { !seen.contains($0) }
-        }
-        set { defaults.set(newValue.map(\.rawValue), forKey: "iconOrder") }
+        get { store.order }
+        set { store.order = newValue }
     }
 
-    /// Moves a metric one or more places left (negative) or right (positive).
-    static func move(_ metric: IconMetric, by offset: Int) {
+    /// Moves a metric to `index` in the order (drag and drop in Settings).
+    static func move(_ metric: IconMetric, to index: Int) {
         var list = order
         guard let from = list.firstIndex(of: metric) else { return }
-        let to = min(max(from + offset, 0), list.count - 1)
-        guard to != from else { return }
         list.remove(at: from)
-        list.insert(metric, at: to)
-        order = list
+        list.insert(metric, at: min(max(index, 0), list.count))
+        if list != order { order = list }
     }
 
     /// Style per metric. Upgrades from the old global/per-chart keys.
     static func style(for metric: IconMetric) -> IconStyle {
-        let map = defaults.dictionary(forKey: "iconStyles") as? [String: String] ?? [:]
-        if let raw = map[metric.rawValue], let style = IconStyle(rawValue: raw),
+        if let raw = store.styles[metric.rawValue], let style = IconStyle(rawValue: raw),
            metric.styles.contains(style) {
             return style
         }
@@ -231,43 +292,38 @@ enum Settings {
     }
 
     static func setStyle(_ style: IconStyle, for metric: IconMetric) {
-        var map = defaults.dictionary(forKey: "iconStyles") as? [String: String] ?? [:]
-        map[metric.rawValue] = style.rawValue
-        defaults.set(map, forKey: "iconStyles")
+        store.styles[metric.rawValue] = style.rawValue
     }
 
     /// Color mode per metric (default: colored). Falls back to the old
     /// single global setting for users upgrading from an earlier version.
     static func colorMode(for metric: IconMetric) -> IconColorMode {
-        let map = defaults.dictionary(forKey: "iconColorModes") as? [String: String] ?? [:]
-        if let raw = map[metric.rawValue], let mode = IconColorMode(rawValue: raw) { return mode }
+        if let raw = store.colorModes[metric.rawValue], let mode = IconColorMode(rawValue: raw) { return mode }
         return defaults.string(forKey: "iconColorMode").flatMap(IconColorMode.init(rawValue:)) ?? .metric
     }
 
     static func setColorMode(_ mode: IconColorMode, for metric: IconMetric) {
-        var map = defaults.dictionary(forKey: "iconColorModes") as? [String: String] ?? [:]
-        map[metric.rawValue] = mode.rawValue
-        defaults.set(map, forKey: "iconColorModes")
+        store.colorModes[metric.rawValue] = mode.rawValue
     }
 
     static var showLabel: Bool {
-        get { defaults.object(forKey: "iconShowLabel") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "iconShowLabel") }
+        get { store.showLabel }
+        set { store.showLabel = newValue }
     }
 
     static var appearance: AppAppearance {
-        get { defaults.string(forKey: "appAppearance").flatMap(AppAppearance.init(rawValue:)) ?? .system }
-        set { defaults.set(newValue.rawValue, forKey: "appAppearance") }
+        get { store.appearance }
+        set { store.appearance = newValue }
     }
 
     static var language: Language {
-        get { defaults.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault }
-        set { defaults.set(newValue.rawValue, forKey: "language") }
+        get { store.language }
+        set { store.language = newValue }
     }
 
     static var autoCheckUpdates: Bool {
-        get { defaults.object(forKey: "autoCheckUpdates") as? Bool ?? true }
-        set { defaults.set(newValue, forKey: "autoCheckUpdates") }
+        get { store.autoCheckUpdates }
+        set { store.autoCheckUpdates = newValue }
     }
 
     static var lastUpdateCheck: Date? {
@@ -283,17 +339,14 @@ enum Settings {
 
     /// nil = not pinned.
     static var pinSide: PinSide? {
-        get { defaults.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:)) }
-        set { defaults.set(newValue?.rawValue, forKey: "pinSide") }
+        get { store.pinSide }
+        set { store.pinSide = newValue }
     }
 
     static let intervals: [TimeInterval] = [0.5, 1, 2, 3, 5]
 
     static var interval: TimeInterval {
-        get {
-            let v = defaults.double(forKey: "refreshInterval")
-            return intervals.contains(v) ? v : 1
-        }
-        set { defaults.set(newValue, forKey: "refreshInterval") }
+        get { store.interval }
+        set { store.interval = newValue }
     }
 }

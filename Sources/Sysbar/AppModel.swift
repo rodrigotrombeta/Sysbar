@@ -1,34 +1,39 @@
 // Shared, observable state for every SwiftUI panel (main panel, screen-edge
 // panel, detail panels). The AppDelegate owns it and pushes a new snapshot
-// each tick.
+// each tick. Settings live in `SettingsStore`, which is observable too, so
+// views that read a setting (or call `tr()`) update in place when it changes.
 
+import Observation
 import SwiftUI
 
 @MainActor
-final class AppModel: ObservableObject {
-    @Published var snapshot = SystemStatsSnapshot()
-    @Published var processes = ProcessSnapshot()
-    /// Bumped whenever a setting changes so views re-read Settings / tr().
-    @Published var revision = 0
-    @Published var showSettings = false
+@Observable
+final class AppModel {
+    var snapshot = SystemStatsSnapshot()
+    var processes = ProcessSnapshot()
+    var showSettings = false {
+        didSet { if showSettings != oldValue { showSettingsChanged(showSettings) } }
+    }
     /// Detail panels the user pinned by clicking a section, in pin order.
-    @Published var pinnedDetails: [SystemStatKind] = []
-    @Published var expandedCores = false
-    @Published var expandedGPUs = false
+    var pinnedDetails: [SystemStatKind] = []
+    var expandedCores = false
+    var expandedGPUs = false
     /// Tallest the main panel may be before it scrolls.
-    @Published var maxPanelHeight: CGFloat = 800
+    var maxPanelHeight: CGFloat = 800
 
     // Actions, wired by the AppDelegate.
-    var settingsChanged: () -> Void = {}
-    var pin: (PinSide?) -> Void = { _ in }
-    var openActivityMonitor: () -> Void = {}
-    var quit: () -> Void = {}
-    var checkForUpdates: () -> Void = {}
-    var toggleDetailPin: (SystemStatKind) -> Void = { _ in }
-    var closeDetail: (SystemStatKind) -> Void = { _ in }
+    @ObservationIgnored var settingsChanged: () -> Void = {}
+    @ObservationIgnored var showSettingsChanged: (Bool) -> Void = { _ in }
+    @ObservationIgnored var pin: (PinSide?) -> Void = { _ in }
+    @ObservationIgnored var openActivityMonitor: () -> Void = {}
+    @ObservationIgnored var quit: () -> Void = {}
+    @ObservationIgnored var checkForUpdates: () -> Void = {}
+    @ObservationIgnored var toggleDetailPin: (SystemStatKind) -> Void = { _ in }
+    @ObservationIgnored var closeDetail: (SystemStatKind) -> Void = { _ in }
 
+    /// A setting that affects AppKit (timer, window appearance, status icon)
+    /// changed; SwiftUI views update on their own.
     func bump() {
-        revision &+= 1
         settingsChanged()
     }
 
@@ -46,8 +51,8 @@ final class AppModel: ObservableObject {
             })
     }
 
-    func moveMetric(_ metric: IconMetric, by offset: Int) {
-        Settings.move(metric, by: offset)
+    func moveMetric(_ metric: IconMetric, to index: Int) {
+        Settings.move(metric, to: index)
         bump()
     }
 
@@ -78,8 +83,7 @@ final class AppModel: ObservableObject {
     }
 
     var autoCheckUpdates: Binding<Bool> {
-        Binding(get: { Settings.autoCheckUpdates },
-                set: { Settings.autoCheckUpdates = $0; self.revision &+= 1 })
+        Binding(get: { Settings.autoCheckUpdates }, set: { Settings.autoCheckUpdates = $0 })
     }
 
     func cycleAppearance() {

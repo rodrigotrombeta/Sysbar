@@ -3,7 +3,7 @@
 // the panel can also be pinned to a screen edge.
 
 import AppKit
-import Combine
+import Observation
 import ServiceManagement
 import SwiftUI
 
@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private let updater = UpdateChecker()
     private var statusItem: NSStatusItem!
+    /// When a click outside last closed the popover. A click on the status
+    /// item itself also reaches the outside-click monitor (on mouse down,
+    /// before the item's action on mouse up), so the action must not reopen
+    /// the popover right after that.
+    private var lastOutsideClose = Date.distantPast
     private var timer: Timer?
     private var lastInterval: TimeInterval = 0
 
@@ -27,8 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var globalClickMonitor: Any?
     private var keyMonitor: Any?
-    private var modelObserver: AnyCancellable?
-    private var settingsObserver: AnyCancellable?
     private var settingsGlobalMonitor: Any?
     private var settingsLocalMonitor: Any?
 
@@ -50,12 +53,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.closePopover()
             self?.updater.check(userInitiated: true)
         }
-        // Re-fit panels whenever their content may have changed size.
-        modelObserver = model.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.fitPanels() }
-        }
-
-        settingsObserver = model.$showSettings.removeDuplicates().sink { [weak self] shown in
+        observeLayout()
+        model.showSettingsChanged = { [weak self] shown in
             DispatchQueue.main.async { self?.watchClicksOutsideSettings(shown) }
         }
 
@@ -112,6 +111,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshot: model.snapshot, config: config, appearance: button.effectiveAppearance)
     }
 
+    /// Re-fits the panels whenever something their size depends on changes
+    /// (re-armed after each change, as Observation tracking is one-shot).
+    private func observeLayout() {
+        withObservationTracking {
+            _ = model.snapshot
+            _ = model.processes
+            _ = model.showSettings
+            _ = model.pinnedDetails
+            _ = model.expandedCores
+            _ = model.expandedGPUs
+            _ = model.maxPanelHeight
+            _ = Settings.language
+            _ = Settings.pinSide
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.fitPanels()
+                self?.observeLayout()
+            }
+        }
+    }
+
     private func fitPanels() {
         let visibleHeight = (popover.isVisible ? popover.screen : edgePanel.screen).visibleFrame.height
         let maxHeight = max(300, visibleHeight - 70)
@@ -132,7 +152,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Popover
 
     @objc private func togglePopover() {
-        popover.isVisible ? closePopover() : openPopover()
+        if popover.isVisible {
+            closePopover()
+        } else if Date().timeIntervalSince(lastOutsideClose) > 0.5 {
+            openPopover()
+        }
+        // else: this click already closed the popover on mouse down.
     }
 
     private func openPopover() {
@@ -143,7 +168,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.closePopover() }
+            MainActor.assumeIsolated {
+                self?.lastOutsideClose = Date()
+                self?.closePopover()
+            }
         }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
@@ -204,7 +232,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             closePopover()
             edgePanel.show()
         }
-        model.revision &+= 1
     }
 
     func openActivityMonitor() {
@@ -219,7 +246,7 @@ enum LoginItem {
     @MainActor
     static func binding(_ model: AppModel) -> Binding<Bool> {
         Binding(
-            get: { SMAppService.mainApp.status == .enabled },
+            get: { SettingsStore.shared.openAtLogin },
             set: { on in
                 do {
                     if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -232,7 +259,14 @@ enum LoginItem {
                              "\n\nDica: mova o Sysbar.app para /Applications e tente de novo.")
                     alert.runModal()
                 }
-                model.revision &+= 1
+                refresh()
             })
+    }
+
+    /// Re-reads the real status (it can also change in System Settings).
+    @MainActor
+    static func refresh() {
+        let on = SMAppService.mainApp.status == .enabled
+        if SettingsStore.shared.openAtLogin != on { SettingsStore.shared.openAtLogin = on }
     }
 }

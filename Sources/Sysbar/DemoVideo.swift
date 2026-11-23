@@ -196,7 +196,7 @@ final class CPULoad: @unchecked Sendable {
 private let accent = Color(red: 0.36, green: 0.85, blue: 0.55)
 
 private struct DemoSceneView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     @ObservedObject var state: DemoState
 
     var body: some View {

@@ -130,7 +130,7 @@ Activity Monitor · appearance (System → Light → Dark) · ⚙︎ settings ·
 
 | Setting | Options |
 |---|---|
-| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. Use the ▲/▼ arrows to reorder them: top to bottom in the list = left to right in the menu bar. |
+| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. Drag the ≡ handle to reorder them: top to bottom in the list = left to right in the menu bar. |
 | Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, I/O (page-ins/outs). Disk: pie, bar, percentage, I/O (read/write). Network: I/O chart (download/upload) or speed text. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |

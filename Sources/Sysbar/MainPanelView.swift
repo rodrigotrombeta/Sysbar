@@ -21,7 +21,7 @@ final class PanelContext {
 }
 
 struct MainPanelView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     let context: PanelContext
     @State private var contentHeight: CGFloat = 400
 
@@ -46,7 +46,6 @@ struct MainPanelView: View {
         }
         .frame(width: panelWidth)
         .onPreferenceChange(SectionFramesKey.self) { context.onSectionFrames($0) }
-        .id(model.revision)
     }
 
     private var sections: some View {
@@ -68,7 +67,7 @@ private struct ContentHeightKey: PreferenceKey {
 /// One section: reports its frame, shows a pin badge when its details are
 /// pinned, and pins/unpins the details on click.
 private struct SectionHost: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     let kind: SystemStatKind
     let context: PanelContext
 
@@ -129,7 +128,7 @@ struct TopProcessesPanel: View {
 // MARK: - Header
 
 private struct PanelHeader: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         HStack(spacing: 12) {
@@ -170,52 +169,81 @@ private struct PanelHeader: View {
 
 // MARK: - Settings
 
+/// One metric in the "Menu bar icon" list: shown toggle, style and color
+/// pickers, and a ≡ handle to drag it to another place in the order.
+private struct MetricSettingsRow: View {
+    let model: AppModel
+    let metric: IconMetric
+    let index: Int
+    @State private var targeted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Toggle(metric.title, isOn: model.metricShown(metric))
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12, weight: .medium))
+                Spacer(minLength: 4)
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 18)
+                    .contentShape(Rectangle())
+                    .draggable(metric.rawValue) {
+                        Text(metric.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .onHover { inside in
+                        if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+                    }
+                    .help(tr("Drag to reorder", "Arraste para reordenar"))
+            }
+            HStack(spacing: 6) {
+                Picker("", selection: model.metricStyle(metric)) {
+                    ForEach(metric.styles) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                Picker("", selection: model.metricColor(metric)) {
+                    ForEach(IconColorMode.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+            }
+            .controlSize(.small)
+            .padding(.leading, 20)
+            .disabled(!Settings.metrics.contains(metric))
+        }
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 6)
+            .fill(targeted ? Color.accentColor.opacity(0.15) : Color.clear)
+            .padding(.horizontal, -4))
+        .dropDestination(for: String.self) { items, _ in
+            guard let raw = items.first, let dragged = IconMetric(rawValue: raw),
+                  dragged != metric else { return false }
+            model.moveMetric(dragged, to: index)
+            return true
+        } isTargeted: { targeted = $0 }
+    }
+}
+
 private struct SettingsView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(tr("Menu bar icon", "Ícone na barra de menus"))
                 .font(.system(size: 12, weight: .bold))
-            Text(tr("Top to bottom = left to right. Use the arrows to reorder.",
-                    "De cima para baixo = da esquerda para a direita. Use as setas para reordenar."))
+            Text(tr("Top to bottom = left to right. Drag ≡ to reorder.",
+                    "De cima para baixo = da esquerda para a direita. Arraste ≡ para reordenar."))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             let order = Settings.order
-            ForEach(Array(order.enumerated()), id: \.element) { index, metric in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Toggle(metric.title, isOn: model.metricShown(metric))
-                            .toggleStyle(.checkbox)
-                            .font(.system(size: 12, weight: .medium))
-                        Spacer(minLength: 4)
-                        Button { model.moveMetric(metric, by: -1) } label: {
-                            Image(systemName: "chevron.up")
-                        }
-                        .disabled(index == 0)
-                        .help(tr("Move left in the menu bar", "Mover para a esquerda na barra de menus"))
-                        Button { model.moveMetric(metric, by: 1) } label: {
-                            Image(systemName: "chevron.down")
-                        }
-                        .disabled(index == order.count - 1)
-                        .help(tr("Move right in the menu bar", "Mover para a direita na barra de menus"))
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .semibold))
-                    HStack(spacing: 6) {
-                        Picker("", selection: model.metricStyle(metric)) {
-                            ForEach(metric.styles) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                        Picker("", selection: model.metricColor(metric)) {
-                            ForEach(IconColorMode.allCases) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                    }
-                    .controlSize(.small)
-                    .padding(.leading, 20)
-                    .disabled(!Settings.metrics.contains(metric))
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(order.enumerated()), id: \.element) { index, metric in
+                    MetricSettingsRow(model: model, metric: metric, index: index)
                 }
             }
             Toggle(tr("Show label (CPU, GPU, RAM…)", "Mostrar rótulo (CPU, GPU, RAM…)"), isOn: model.showLabel)
@@ -267,5 +295,6 @@ private struct SettingsView: View {
         .controlSize(.small)
         .padding(14)
         .frame(width: panelWidth, alignment: .leading)
+        .onAppear { LoginItem.refresh() }
     }
 }

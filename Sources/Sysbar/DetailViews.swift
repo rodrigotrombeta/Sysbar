@@ -30,7 +30,7 @@ extension SystemStatKind {
 
 /// Window content for one detail panel: header with pin/close + body.
 struct DetailContainer: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
     let kind: SystemStatKind
 
     var body: some View {
@@ -62,14 +62,13 @@ struct DetailContainer: View {
         }
         .padding(14)
         .frame(width: detailWidth, alignment: .leading)
-        .id(model.revision)
     }
 }
 
 // MARK: - CPU
 
 private struct CPUDetail: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         let s = model.snapshot
@@ -137,7 +136,7 @@ private struct CPUDetail: View {
 // MARK: - GPU
 
 private struct GPUDetail: View {
-    @ObservedObject var model: AppModel
+    @Bindable var model: AppModel
 
     var body: some View {
         let s = model.snapshot
@@ -215,7 +214,7 @@ private struct GPUDetail: View {
 // MARK: - Memory
 
 private struct MemoryDetail: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         let s = model.snapshot
@@ -268,7 +267,7 @@ private struct MemoryDetail: View {
 // MARK: - Disk
 
 private struct DiskDetail: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         let s = model.snapshot
@@ -300,7 +299,7 @@ private struct DiskDetail: View {
 // MARK: - Network
 
 private struct NetworkDetail: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         let s = model.snapshot
@@ -330,7 +329,7 @@ private struct NetworkDetail: View {
 // MARK: - Processes
 
 private struct ProcessesDetail: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
 
     var body: some View {
         let total = model.snapshot.memory.totalBytes
