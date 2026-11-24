@@ -26,6 +26,8 @@ extension SystemStatKind {
         case .processes: return tr("Top processes", "Processos")
         case .claude: return tr("Claude Code limits", "Limites do Claude Code")
         case .clock: return tr("Clock", "Relógio")
+        case .calendar: return tr("Calendar", "Calendário")
+        case .battery: return tr("Battery", "Bateria")
         }
     }
 }
@@ -70,6 +72,8 @@ struct DetailContainer: View {
             case .processes: ProcessesDetail(model: model)
             case .claude: ClaudeDetail(model: model)
             case .clock: ClockStatsPanel(model: model, inDetail: true)
+            case .calendar: CalendarStatsPanel(model: model, inDetail: true)
+            case .battery: BatteryDetail(model: model)
             }
         }
         .padding(14)
@@ -195,6 +199,14 @@ private struct GPUDetail: View {
                 }
             }
 
+            if s.gpuDevices.count <= 1 {
+                let cores = s.gpuDevices.first?.cores ?? 0
+                Text(tr("macOS reports one utilization value for the whole GPU\(cores > 0 ? " (\(cores) cores)" : ""), not per core; ANE usage and FPS aren't available through public APIs.",
+                        "O macOS informa um único valor de uso para a GPU inteira\(cores > 0 ? " (\(cores) núcleos)" : ""), não por núcleo; uso do ANE e FPS não estão disponíveis em APIs públicas."))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
             DisclosureGroup(isExpanded: $model.expandedGPUs) {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(s.gpuDevices.indices, id: \.self) { i in
@@ -219,6 +231,7 @@ private struct GPUDetail: View {
             } label: {
                 Text(tr("Per GPU (\(s.gpuDevices.count))", "Por GPU (\(s.gpuDevices.count))"))
                     .font(.system(size: 12, weight: .semibold))
+            }
             }
         }
     }

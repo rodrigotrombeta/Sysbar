@@ -30,6 +30,8 @@ final class AppModel {
     @ObservationIgnored var settingsChanged: () -> Void = {}
     @ObservationIgnored var showSettingsChanged: (Bool) -> Void = { _ in }
     @ObservationIgnored var pin: (PinSide?) -> Void = { _ in }
+    @ObservationIgnored var togglePinKeepingOpen: () -> Void = {}
+    @ObservationIgnored var applyIconOpens: () -> Void = {}
     @ObservationIgnored var openActivityMonitor: () -> Void = {}
     @ObservationIgnored var quit: () -> Void = {}
     @ObservationIgnored var checkForUpdates: () -> Void = {}
@@ -56,6 +58,65 @@ final class AppModel {
     /// Status of the fetch from Anthropic (Settings shows it).
     var claudeFetchStatus: ClaudeUsageFetcher.Status = .idle
     @ObservationIgnored var fetchClaude: () -> Void = {}
+
+    /// Page shown by the panels that aren't tied to one page; remembered,
+    /// so the panel reopens on the page you were on.
+    var currentPage = UserDefaults.standard.integer(forKey: "currentPage") {
+        didSet { UserDefaults.standard.set(currentPage, forKey: "currentPage") }
+    }
+
+    func sectionPage(_ kind: SystemStatKind) -> Binding<Int> {
+        Binding(get: { Settings.isOnDashboard(kind) ? Settings.page(of: kind) : -1 },
+                set: { page in
+                    Settings.setOnDashboard(page >= 0, kind)
+                    if page >= 0 { Settings.setPage(page, for: kind) }
+                })
+    }
+
+    var pageCount: Binding<Int> {
+        Binding(get: { Settings.pageCount }, set: {
+            Settings.pageCount = $0
+            if self.currentPage >= $0 { self.currentPage = 0 }
+        })
+    }
+
+    func pageName(_ page: Int) -> Binding<String> {
+        Binding(get: { page < SettingsStore.shared.pageNames.count ? SettingsStore.shared.pageNames[page] : "" },
+                set: { Settings.setPageName($0, for: page) })
+    }
+
+    /// Moves a page up (-1) or down (+1); the selected page follows it.
+    func movePage(_ page: Int, by delta: Int) {
+        let target = page + delta
+        guard (0..<Settings.pageCount).contains(target) else { return }
+        Settings.swapPages(page, target)
+        if currentPage == page { currentPage = target } else if currentPage == target { currentPage = page }
+        pagesChanged()
+    }
+
+    var pinAllPages: Binding<Bool> {
+        Binding(get: { Settings.pinAllPages }, set: { Settings.pinAllPages = $0; self.pagesChanged() })
+    }
+
+    /// Pages or pinning changed: rebuild the pinned columns.
+    @ObservationIgnored var pagesChanged: () -> Void = {}
+
+    var iconOpens: Binding<String> {
+        Binding(get: { Settings.iconOpens }, set: {
+            Settings.iconOpens = $0
+            // Float / Full apply right away to the open panel.
+            Settings.pinFull = $0 == "full"
+            self.applyIconOpens()
+        })
+    }
+
+    var iconSpacing: Binding<Double> {
+        Binding(get: { Settings.iconSpacing }, set: { Settings.iconSpacing = $0.rounded(); self.bump() })
+    }
+
+    var chartWindow: Binding<TimeInterval> {
+        Binding(get: { Settings.chartWindow }, set: { Settings.chartWindow = $0 })
+    }
 
     var clockFontSize: Binding<Double> {
         Binding(get: { Settings.clockFontSize }, set: { Settings.clockFontSize = $0; self.bump() })

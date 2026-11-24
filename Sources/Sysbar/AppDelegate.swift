@@ -28,9 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var popover = MainPanelController(
         model: model, details: details, placement: .popover,
         statusButton: { [weak self] in self?.statusItem.button })
-    private lazy var edgePanel = MainPanelController(
-        model: model, details: details, placement: .edge,
-        statusButton: { [weak self] in self?.statusItem.button })
+    /// Pinned panels: one (the selected page), or one column per page.
+    private var edgePanels: [MainPanelController] = []
 
     private var globalClickMonitor: Any?
     private var keyMonitor: Any?
@@ -49,6 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model.settingsChanged = { [weak self] in self?.applySettings() }
         model.pin = { [weak self] side in self?.pin(side) }
+        model.togglePinKeepingOpen = { [weak self] in self?.togglePinKeepingOpen() }
+        model.applyIconOpens = { [weak self] in
+            guard let self else { return }
+            // The menu is open and Float / Full was chosen: become that panel.
+            if self.popover.isVisible {
+                self.closePopover()
+                self.openUnpinnedEdge()
+            } else {
+                self.fitPanels()
+            }
+        }
         model.openActivityMonitor = { [weak self] in self?.openActivityMonitor() }
         processHelper.onStateChange = { [weak self] state in self?.model.allProcesses = state }
         model.showAllProcesses = { [weak self] on in
@@ -75,7 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if case .ok = status { self.model.refreshClaudeFromDisk() }
         }
         model.fetchClaude = { [weak self] in self?.claudeFetcher.fetch() }
-        if Settings.pinSide != nil { edgePanel.show() }
+        model.pagesChanged = { [weak self] in self?.syncEdgePanels() }
+        syncEdgePanels()
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -98,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var panelsVisible: Bool {
-        popover.isVisible || edgePanel.isVisible || details.anyVisible
+        popover.isVisible || edgePanels.contains(where: \.isVisible) || details.anyVisible
     }
 
     private func tick() {
@@ -149,6 +160,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = Settings.language
             _ = Settings.pinSide
             _ = Settings.pinFull
+            _ = Settings.pageCount
+            _ = Settings.pinAllPages
+            _ = SettingsStore.shared.pageSides
+            _ = SettingsStore.shared.sectionPages
+            _ = SettingsStore.shared.pageNames
+            _ = SettingsStore.shared.hiddenSections
+            _ = model.currentPage
             _ = Settings.sectionOrder
         } onChange: { [weak self] in
             DispatchQueue.main.async {
@@ -159,20 +177,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func fitPanels() {
-        let visibleHeight = (popover.isVisible ? popover.screen : edgePanel.screen).visibleFrame.height
+        if edgePanels.map(\.page) != (Settings.pinSide == nil ? (edgeOpenUnpinned ? [nil] : []) : Settings.pinnedPages) {
+            syncEdgePanels()
+        }
+        let edgeScreen = edgePanels.first?.screen ?? popover.screen
+        let visibleHeight = (popover.isVisible ? popover.screen : edgeScreen).visibleFrame.height
         // A full-height edge panel only leaves room for its header.
-        let fullEdge = !popover.isVisible && edgePanel.isVisible && Settings.pinFull
-        let maxHeight = max(300, visibleHeight - (fullEdge ? 40 : 70))
+        let fullEdge = !popover.isVisible && !edgePanels.isEmpty && Settings.edgeFull
+        // Header (+ page tabs) must fit too, or the window grows past the
+        // menu bar.
+        // Same with Settings open (tabs hidden), so opening it doesn't resize.
+        let tabs: CGFloat = Settings.pageCount > 1 ? 34 : 0
+        let maxHeight = max(300, visibleHeight - (fullEdge ? 44 : 70) - tabs)
         if abs(model.maxPanelHeight - maxHeight) > 1 { model.maxPanelHeight = maxHeight }
         if popover.isVisible { popover.layout() }
-        if edgePanel.isVisible { edgePanel.layout() }
+        placeColumns()
         details.fitAll()
     }
 
     private func applySettings() {
         if Settings.interval != lastInterval { restartTimer() }
         popover.panel.applyAppearance()
-        edgePanel.panel.applyAppearance()
+        edgePanels.forEach { $0.panel.applyAppearance() }
         details.applyAppearance()
         updateIcon()
     }
@@ -185,12 +211,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pin(nil)
             return
         }
-        if popover.isVisible {
-            closePopover()
+        // The icon opens an edge panel (Float or Full) that is NOT pinned: it
+        // closes on a click outside, and its 📌 pins it.
+        if edgeOpenUnpinned {
+            closeUnpinnedEdge()
         } else if Date().timeIntervalSince(lastOutsideClose) > 0.5 {
-            openPopover()
+            Settings.pinFull = Settings.iconOpens == "full"
+            openUnpinnedEdge()
         }
-        // else: this click already closed the popover on mouse down.
+        // else: this click already closed the panel on mouse down.
     }
 
     private func openPopover() {
@@ -213,6 +242,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
             return event
+        }
+    }
+
+    /// An edge panel opened by the icon (Float / Full) but not pinned.
+    private var edgeOpenUnpinned = false
+    private var edgeClickMonitor: Any?
+
+    private func openUnpinnedEdge() {
+        model.processes = processSampler.sample()
+        edgeOpenUnpinned = true
+        if let id = NSScreen.underMouse?.displayID { Settings.pinScreenID = id }
+        syncEdgePanels()
+        fitPanels()
+        edgeClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.lastOutsideClose = Date()
+                self?.closeUnpinnedEdge()
+            }
+        }
+    }
+
+    private func closeUnpinnedEdge() {
+        edgeOpenUnpinned = false
+        if let edgeClickMonitor { NSEvent.removeMonitor(edgeClickMonitor) }
+        edgeClickMonitor = nil
+        model.showSettings = false
+        syncEdgePanels()
+        details.closeUnpinned()
+    }
+
+    /// The 📌 of an edge panel: pin it where it is, or unpin it and keep it
+    /// open (it then closes on a click outside).
+    private func togglePinKeepingOpen() {
+        if Settings.pinSide != nil {
+            let side = Settings.pinSide
+            Settings.pinSide = nil
+            if let side { UserDefaults.standard.set(side.rawValue, forKey: "lastPinSide") }
+            openUnpinnedEdge()
+        } else {
+            if let edgeClickMonitor { NSEvent.removeMonitor(edgeClickMonitor) }
+            edgeClickMonitor = nil
+            edgeOpenUnpinned = false
+            Settings.pinSide = Settings.lastPinSide
+            syncEdgePanels()
         }
     }
 
@@ -248,7 +321,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Only Sysbar's own floating panels count; menus opened by the
             // settings pickers must not close Settings.
             if let window = event.window, window is KeyPanel,
-               window !== self.popover.panel.window, window !== self.edgePanel.panel.window {
+               window !== self.popover.panel.window,
+               !self.edgePanels.contains(where: { $0.panel.window === window }) {
                 self.model.showSettings = false
             }
             return event
@@ -258,9 +332,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Pin to screen edge
 
     private func pin(_ side: PinSide?) {
+        if let edgeClickMonitor { NSEvent.removeMonitor(edgeClickMonitor) }
+        edgeClickMonitor = nil
+        edgeOpenUnpinned = false
         Settings.pinSide = side
         if side == nil {
-            edgePanel.close()
+            syncEdgePanels()
             details.closeUnpinned()
         } else {
             // Pin on the display where the user clicked the pin button.
@@ -268,7 +345,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Settings.pinScreenID = id
             }
             closePopover()
-            edgePanel.show()
+            syncEdgePanels()
+        }
+    }
+
+    /// Creates / removes the pinned panels to match the settings (none, one
+    /// for the selected page, or one column per page) and places them.
+    private func syncEdgePanels() {
+        let wanted = Settings.pinSide == nil ? (edgeOpenUnpinned ? [nil] : []) : Settings.pinnedPages
+        if edgePanels.map(\.page) != wanted {
+            edgePanels.forEach { $0.close() }
+            edgePanels = wanted.map { page in
+                MainPanelController(model: model, details: details, placement: .edge, page: page,
+                                    statusButton: { [weak self] in self?.statusItem.button })
+            }
+            edgePanels.forEach { $0.panel.applyAppearance() }
+        }
+        placeColumns()
+        edgePanels.forEach { $0.show() }
+    }
+
+    /// Column index of each pinned page among those on the same edge.
+    private func placeColumns() {
+        var used: [PinSide: Int] = [:]
+        for panel in edgePanels {
+            let side = Settings.side(forPage: panel.page)
+            panel.column = used[side, default: 0]
+            used[side, default: 0] += 1
+            if panel.isVisible { panel.layout() }
         }
     }
 

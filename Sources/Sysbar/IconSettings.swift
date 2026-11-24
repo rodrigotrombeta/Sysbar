@@ -6,7 +6,7 @@ import SwiftUI
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable, Identifiable {
-    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network, claude, clock
+    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network, claude, clock, battery
 
     var id: String { rawValue }
 
@@ -22,6 +22,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .network: return tr("Network", "Rede")
         case .claude: return tr("Claude Code limits", "Limites do Claude Code")
         case .clock: return tr("Clock (first 2 time zones)", "Relógio (2 primeiros fusos)")
+        case .battery: return tr("Battery", "Bateria")
         }
     }
 
@@ -38,6 +39,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .network: return "NET"
         case .claude: return "CC"
         case .clock: return ""
+        case .battery: return "BAT"
         }
     }
 
@@ -53,6 +55,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .network: return .systemBlue
         case .claude: return .systemOrange
         case .clock: return .labelColor
+        case .battery: return .systemGreen
         }
     }
 
@@ -71,6 +74,8 @@ enum IconMetric: String, CaseIterable, Identifiable {
             return [.limits]
         case .clock:
             return [.clock]
+        case .battery:
+            return [.battery, .batteryIcon, .batteryVertical, .batteryIconVertical, .percent]
         }
     }
 
@@ -100,6 +105,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .network: return nil
         case .claude: return s.claude?.fiveHour.map { $0.percent / 100 }
         case .clock: return nil
+        case .battery: return s.battery?.level
         }
     }
 
@@ -111,7 +117,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .gpu: return s.gpuHistory
         case .gpuMemory: return s.gpuMemoryHistory
         case .memory: return s.memoryHistory
-        case .disk, .network, .claude, .clock: return []
+        case .disk, .network, .claude, .clock, .battery: return []
         }
     }
 
@@ -128,7 +134,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
 
 /// How one metric is drawn in the menu bar.
 enum IconStyle: String, CaseIterable, Identifiable {
-    case line, bar, pie, percent, linePercent, io, speed, amount, limits, clock
+    case line, bar, pie, percent, linePercent, io, speed, amount, limits, clock, battery, batteryIcon, batteryVertical, batteryIconVertical
 
     var id: String { rawValue }
 
@@ -144,6 +150,10 @@ enum IconStyle: String, CaseIterable, Identifiable {
         case .amount: return tr("Used / free (GB)", "Usado / livre (GB)")
         case .limits: return tr("5h / weekly %", "5h / semanal %")
         case .clock: return tr("Date and time", "Data e hora")
+        case .battery: return tr("% + battery", "% + bateria")
+        case .batteryIcon: return tr("Battery icon", "Ícone de bateria")
+        case .batteryVertical: return tr("% + battery (vertical)", "% + bateria (vertical)")
+        case .batteryIconVertical: return tr("Battery icon (vertical)", "Ícone de bateria (vertical)")
         }
     }
 }
@@ -233,6 +243,33 @@ final class SettingsStore {
     var opacity: OpacitySet {
         didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
+    /// Dashboard pages: how many, their names ("" = the number), which page
+    /// each section is on, and how pinning works.
+    var pageCount: Int {
+        didSet { defaults.set(pageCount, forKey: "pageCount") }
+    }
+    var pageNames: [String] {
+        didSet { defaults.set(pageNames, forKey: "pageNames") }
+    }
+    var sectionPages: [String: Int] {
+        didSet { defaults.set(sectionPages, forKey: "sectionPages") }
+    }
+    /// Pin every page (one column each) instead of only the main page.
+    var pinAllPages: Bool {
+        didSet { defaults.set(pinAllPages, forKey: "pinAllPages") }
+    }
+    /// Edge of each page after the first when all pages are pinned.
+    var pageSides: [String: String] {
+        didSet { defaults.set(pageSides, forKey: "pageSides") }
+    }
+    /// Space between the menu bar widgets (pt).
+    var iconSpacing: Double {
+        didSet { defaults.set(iconSpacing, forKey: "iconSpacing") }
+    }
+    /// Time span of the history charts, in seconds.
+    var chartWindow: TimeInterval {
+        didSet { defaults.set(chartWindow, forKey: "chartWindow") }
+    }
     /// Names given to Claude Code accounts (by account id; "" = main).
     var claudeAccountNames: [String: String] {
         didSet { defaults.set(claudeAccountNames, forKey: "claudeAccountNames") }
@@ -272,7 +309,14 @@ final class SettingsStore {
     }
     /// nil = not pinned.
     var pinSide: PinSide? {
-        didSet { defaults.set(pinSide?.rawValue, forKey: "pinSide") }
+        didSet {
+            defaults.set(pinSide?.rawValue, forKey: "pinSide")
+            if let pinSide { defaults.set(pinSide.rawValue, forKey: "lastPinSide") }
+        }
+    }
+    /// What clicking the menu bar icon opens: "float" or "full".
+    var iconOpens: String {
+        didSet { defaults.set(iconOpens, forKey: "iconOpens") }
     }
     var interval: TimeInterval {
         didSet { defaults.set(interval, forKey: "refreshInterval") }
@@ -319,6 +363,15 @@ final class SettingsStore {
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
         separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
         claudeFetch = d.bool(forKey: "claudeFetch")
+        chartWindow = d.object(forKey: "chartWindow") as? Double ?? 60
+        iconSpacing = d.object(forKey: "iconSpacing") as? Double ?? 6
+        pageCount = min(6, max(1, d.object(forKey: "pageCount") as? Int ?? 1))
+        pageNames = d.stringArray(forKey: "pageNames") ?? []
+        sectionPages = d.dictionary(forKey: "sectionPages") as? [String: Int] ?? [:]
+        pinAllPages = d.bool(forKey: "pinAllPages")
+        pageSides = d.dictionary(forKey: "pageSides") as? [String: String] ?? [:]
+        // "menu" (under the icon) was removed: the icon opens Float or Full.
+        iconOpens = d.string(forKey: "iconOpens") == "full" ? "full" : "float"
         claudeAccountNames = d.dictionary(forKey: "claudeAccountNames") as? [String: String] ?? [:]
         textColor = (d.array(forKey: "textColor") as? [Double]).flatMap { $0.count == 3 ? $0 : nil }
         panelOpacities = d.data(forKey: "panelOpacitySets")
@@ -435,6 +488,108 @@ enum Settings {
     static var opacity: OpacitySet {
         get { store.opacity }
         set { store.opacity = newValue }
+    }
+
+    // MARK: Pages
+
+    static var pageCount: Int {
+        get { store.pageCount }
+        set { store.pageCount = min(6, max(1, newValue)) }
+    }
+
+    /// Page value for "on every page" (Both / All pages).
+    static let allPages = -2
+
+    /// Page a section is on (0-based, within the current page count), or
+    /// `allPages`.
+    static func page(of kind: SystemStatKind) -> Int {
+        let page = store.sectionPages[kind.rawValue] ?? 0
+        return page == allPages ? allPages : min(page, store.pageCount - 1)
+    }
+
+    static func isOnPage(_ kind: SystemStatKind, _ page: Int) -> Bool {
+        isOnDashboard(kind) && (Settings.page(of: kind) == page || Settings.page(of: kind) == allPages)
+    }
+
+    static var iconOpens: String {
+        get { store.iconOpens }
+        set { store.iconOpens = newValue }
+    }
+
+    /// Edge used when the icon opens a pinned panel: the last one chosen.
+    static var lastPinSide: PinSide {
+        UserDefaults.standard.string(forKey: "lastPinSide").flatMap(PinSide.init(rawValue:)) ?? .right
+    }
+
+    static func setPage(_ page: Int, for kind: SystemStatKind) {
+        store.sectionPages[kind.rawValue] = page
+    }
+
+    /// The page's name, or its number.
+    static func pageTitle(_ page: Int) -> String {
+        let name = page < store.pageNames.count ? store.pageNames[page].trimmingCharacters(in: .whitespaces) : ""
+        return name.isEmpty ? "\(page + 1)" : name
+    }
+
+    /// Swaps two pages: their names, sections and pinned edges.
+    static func swapPages(_ a: Int, _ b: Int) {
+        guard a != b, (0..<store.pageCount).contains(a), (0..<store.pageCount).contains(b) else { return }
+        var names = store.pageNames
+        while names.count < store.pageCount { names.append("") }
+        names.swapAt(a, b)
+        store.pageNames = names
+        store.sectionPages = store.sectionPages.mapValues { $0 == a ? b : $0 == b ? a : $0 }
+        // Page 0's edge is the main pin side; the others are stored by index.
+        let sideA = side(forPage: a), sideB = side(forPage: b)
+        for (page, side) in [(a, sideB), (b, sideA)] {
+            if page == 0 { if store.pinSide != nil { store.pinSide = side } } else { setSide(side, forPage: page) }
+        }
+    }
+
+    static func setPageName(_ name: String, for page: Int) {
+        var names = store.pageNames
+        while names.count <= page { names.append("") }
+        names[page] = name
+        store.pageNames = names
+    }
+
+    static var pinAllPages: Bool {
+        get { store.pinAllPages }
+        set { store.pinAllPages = newValue }
+    }
+
+    /// Pages that get their own pinned column (nil = one panel that shows
+    /// the selected page).
+    static var pinnedPages: [Int?] {
+        guard store.pinSide != nil else { return [] }
+        return store.pinAllPages && store.pageCount > 1 ? Array(0..<store.pageCount) : [nil]
+    }
+
+    /// Edge of a pinned page: the main pin side for page 0 (and the single
+    /// panel), its own choice for the others.
+    static func side(forPage page: Int?) -> PinSide {
+        let main = store.pinSide ?? lastPinSide
+        guard let page, page > 0 else { return main }
+        return store.pageSides["\(page)"].flatMap(PinSide.init(rawValue:)) ?? main
+    }
+
+    static func setSide(_ side: PinSide, forPage page: Int) {
+        store.pageSides["\(page)"] = side.rawValue
+    }
+
+    /// Several pinned columns are always full height.
+    static var edgeFull: Bool { store.pinFull || pinnedPages.count > 1 }
+
+    static var iconSpacing: Double {
+        get { store.iconSpacing }
+        set { store.iconSpacing = min(20, max(0, newValue)) }
+    }
+
+    static let chartWindows: [TimeInterval] = [60, 300, 900, 1800, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600]
+
+    static var chartWindow: TimeInterval {
+        get { store.chartWindow }
+        set { store.chartWindow = newValue }
     }
 
     static var claudeAccountNames: [String: String] {

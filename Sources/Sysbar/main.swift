@@ -107,6 +107,7 @@ enum Preview {
                     MemoryStatsPanel(snapshot: snapshot)
                     DiskStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
                     NetworkStatsPanel(snapshot: snapshot, refreshInterval: 0.25)
+                    BatteryStatsPanel(snapshot: snapshot)
                     TopProcessesPanel(rows: Array(model.processes.topMemory.prefix(5)),
                                       total: snapshot.memory.totalBytes)
                 }

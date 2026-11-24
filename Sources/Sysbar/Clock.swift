@@ -80,7 +80,6 @@ struct ClockStatsPanel: View {
     let model: AppModel
     /// Off in the detail panel, which has its own title.
     var inDetail = false
-    @State private var monthOffset = 0
 
     var body: some View {
         // Re-rendered every tick (the snapshot changes), so the clocks move.
@@ -94,10 +93,33 @@ struct ClockStatsPanel: View {
                     .textLayer()
                     .frame(maxWidth: .infinity, alignment: .center)
             }
-            MonthCalendar(now: now, monthOffset: $monthOffset)
             ForEach(WorldClock.zones, id: \.identifier) { zone in
                 ClockRow(zone: zone, now: now)
             }
+        }
+        .padding(.horizontal, inDetail ? 0 : 14)
+        .padding(.vertical, inDetail ? 0 : 8)
+        .frame(width: inDetail ? nil : panelWidth)
+    }
+}
+
+struct CalendarStatsPanel: View {
+    let model: AppModel
+    var inDetail = false
+    @State private var monthOffset = 0
+
+    var body: some View {
+        let now = model.snapshot.uptimeSeconds >= 0 ? Date() : Date()
+        VStack(alignment: .leading, spacing: 8) {
+            if !inDetail {
+                Text(tr("CALENDAR", "CALENDÁRIO"))
+                    .font(.system(size: StatsTheme.caption, weight: .bold))
+                    .kerning(1)
+                    .foregroundStyle(Color(nsColor: .systemBlue))
+                    .textLayer()
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            MonthCalendar(now: now, monthOffset: $monthOffset)
         }
         .padding(.horizontal, inDetail ? 0 : 14)
         .padding(.vertical, inDetail ? 0 : 8)

@@ -333,7 +333,7 @@ struct SystemStatsPanelStack: View {
             DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         case .network:
             NetworkStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
-        case .processes, .claude, .clock:
+        case .processes, .claude, .clock, .calendar, .battery:
             EmptyView()
         }
     }
@@ -359,7 +359,7 @@ struct SectionRule: View {
     }
 }
 
-private struct StatsPanelHeader: View {
+struct StatsPanelHeader: View {
     let title: String
     private let theme = StatsTheme()
 
@@ -372,7 +372,7 @@ private struct StatsPanelHeader: View {
     }
 }
 
-private struct StatsPanelCaption: View {
+struct StatsPanelCaption: View {
     let text: String
     let window: String
     private let theme = StatsTheme()
@@ -384,7 +384,7 @@ private struct StatsPanelCaption: View {
     }
 }
 
-private struct UsageBarRow: View {
+struct UsageBarRow: View {
     let label: String
     let value: String
     let fraction: Double
@@ -420,7 +420,7 @@ private struct UsageBarRow: View {
     }
 }
 
-private struct StatsValueRow: View {
+struct StatsValueRow: View {
     let label: String
     let value: String
     private let theme = StatsTheme()
@@ -497,8 +497,18 @@ enum StatsFormat {
 
     /// History window caption: 60 samples at 1 s → "60s"; at 0.5 s → "30s".
     /// Empty history → empty string (caption shows no window).
+    @MainActor
     static func window(sampleCount: Int, interval: TimeInterval) -> String {
         guard sampleCount > 1, interval > 0 else { return "" }
-        return "\(Int((Double(sampleCount) * interval).rounded()))s"
+        return duration(Double(sampleCount) * SystemStatsSampler.bucketSeconds)
+    }
+
+    /// "45s", "5m", "1h 30m", "24h".
+    static func duration(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        if s < 120 { return "\(s)s" }
+        if s < 3600 { return "\(s / 60)m" }
+        let h = s / 3600, m = (s % 3600) / 60
+        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 }

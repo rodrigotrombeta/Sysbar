@@ -15,7 +15,7 @@ enum StatusIconRenderer {
     /// I/O charts never scale below this (bytes/s), so idle noise stays flat.
     private static let ioFloor: Double = 256_000
     private static let gap: CGFloat = 2
-    private static let widgetSpacing: CGFloat = 6
+    private static var widgetSpacing: CGFloat { CGFloat(Settings.iconSpacing) }
     /// Points shown in the menubar chart (the right-most part of the history).
     private static let chartPoints = 30
 
@@ -99,6 +99,10 @@ enum StatusIconRenderer {
         case .amount: return label + speedWidth
         case .limits: return label + 40
         case .clock: return clockWidth
+        case .battery: return batteryTextWidth + gap + batteryWidth
+        case .batteryIcon: return batteryWidth
+        case .batteryVertical: return batteryTextWidth + gap + verticalBatteryWidth
+        case .batteryIconVertical: return verticalBatteryWidth
         }
     }
 
@@ -122,6 +126,13 @@ enum StatusIconRenderer {
             drawPercentBlock(label: config.showLabel ? metric.shortLabel : nil,
                              value: value, color: ink,
                              rect: NSRect(x: x, y: 0, width: percentWidth, height: height))
+            return
+        }
+
+        if [.battery, .batteryIcon, .batteryVertical, .batteryIconVertical].contains(style) {
+            drawBattery(snapshot.battery, withText: style == .battery || style == .batteryVertical,
+                        vertical: style == .batteryVertical || style == .batteryIconVertical, ink: ink, mono: mono,
+                        rect: NSRect(x: x, y: 0, width: width(for: metric, config: config), height: height))
             return
         }
 
@@ -174,9 +185,74 @@ enum StatusIconRenderer {
         case .limits:
             drawLimits(snapshot.claude, textColor: ink, mono: mono,
                        rect: NSRect(x: x, y: 0, width: 40, height: height))
-        case .percent:
+        case .percent, .battery, .batteryIcon, .batteryVertical, .batteryIconVertical:
             break
         }
+    }
+
+    // MARK: Battery
+
+    private static let batteryWidth: CGFloat = 24
+    private static let batteryTextWidth: CGFloat = 26
+    private static let verticalBatteryWidth: CGFloat = 11
+
+    /// "80%" then a battery outline filled to the level, with a bolt when
+    /// charging or a plug when on power but not charging.
+    private static func drawBattery(_ b: BatteryInfo?, withText: Bool, vertical: Bool = false,
+                                    ink: NSColor, mono: Bool, rect: NSRect) {
+        var x = rect.minX
+        let level = b?.level ?? 0
+        if withText {
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            let para = NSMutableParagraphStyle()
+            para.alignment = .right
+            let s = NSAttributedString(string: b.map { "\(Int(($0.level * 100).rounded()))%" } ?? "–",
+                                       attributes: [.font: font, .foregroundColor: ink, .paragraphStyle: para])
+            let h = s.size().height
+            s.draw(in: NSRect(x: x, y: rect.midY - h / 2, width: batteryTextWidth, height: h))
+            x += batteryTextWidth + gap
+        }
+        let clamped = CGFloat(min(1, max(0, level)))
+        let body: NSRect
+        let tip: NSRect
+        if vertical {
+            // Upright: tip on top, fills from the bottom.
+            body = NSRect(x: x + 1, y: rect.midY - 8, width: verticalBatteryWidth - 2, height: 14.5)
+            tip = NSRect(x: body.midX - 2, y: body.maxY + 0.5, width: 4, height: 1.6)
+        } else {
+            body = NSRect(x: x + 0.5, y: rect.midY - 5.5, width: batteryWidth - 3, height: 11)
+            tip = NSRect(x: body.maxX + 0.5, y: rect.midY - 2, width: 1.8, height: 4)
+        }
+        let radius: CGFloat = vertical ? 2.5 : 3
+        let outline = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
+        ink.withAlphaComponent(0.5).setStroke()
+        outline.lineWidth = 1
+        outline.stroke()
+        ink.withAlphaComponent(0.5).setFill()
+        NSBezierPath(roundedRect: tip, xRadius: 0.8, yRadius: 0.8).fill()
+        let inner = body.insetBy(dx: 1.5, dy: 1.5)
+        let fill = vertical
+            ? NSRect(x: inner.minX, y: inner.minY, width: inner.width, height: max(1.5, inner.height * clamped))
+            : NSRect(x: inner.minX, y: inner.minY, width: max(1.5, inner.width * clamped), height: inner.height)
+        (mono ? ink : (b?.color ?? ink)).setFill()
+        NSBezierPath(roundedRect: fill, xRadius: 1.5, yRadius: 1.5).fill()
+        guard let b, b.externalConnected,
+              let symbol = NSImage(systemSymbolName: b.isCharging ? "bolt.fill" : "powerplug.fill",
+                                   accessibilityDescription: nil)?
+                  .withSymbolConfiguration(.init(pointSize: vertical ? 5 : 7.5, weight: .black))
+        else { return }
+        // White symbol on the fill; in a template (monochrome) icon it is
+        // punched out of the fill instead.
+        let size = symbol.size
+        let r = NSRect(x: body.midX - size.width / 2, y: body.midY - size.height / 2,
+                       width: size.width, height: size.height)
+        let tinted = NSImage(size: size, flipped: false) { bounds in
+            symbol.draw(in: bounds)
+            NSColor.white.set()
+            bounds.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.draw(in: r, from: .zero, operation: mono ? .destinationOut : .sourceOver, fraction: 1)
     }
 
     // MARK: Clock

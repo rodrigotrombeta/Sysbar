@@ -167,9 +167,16 @@ final class MainPanelController {
     private weak var details: DetailManager?
     private var statusButton: () -> NSStatusBarButton?
 
-    init(model: AppModel, details: DetailManager, placement: Placement,
+    /// Pinned column of one page (nil = shows the selected page).
+    let page: Int?
+    /// Position among the pinned columns on the same edge (0 = at the edge).
+    var column = 0
+
+    init(model: AppModel, details: DetailManager, placement: Placement, page: Int? = nil,
          statusButton: @escaping () -> NSStatusBarButton?) {
         self.placement = placement
+        self.page = page
+        context.page = page
         self.details = details
         self.statusButton = statusButton
         context.showsMute = placement == .edge
@@ -258,17 +265,20 @@ final class MainPanelController {
             }
             frame.origin.x = min(max(frame.origin.x, visible.minX + 6), visible.maxX - size.width - 6)
         case .edge:
-            let side = Settings.pinSide ?? .right
-            if Settings.pinFull {
+            let side = Settings.side(forPage: page)
+            let full = Settings.edgeFull
+            // Columns of other pages on the same edge sit next to each other.
+            let offset = CGFloat(column) * size.width
+            if full {
                 // Whole height of the screen, flush with its edge.
                 frame.size.height = visible.height
-                frame.origin.x = side == .left ? visible.minX : visible.maxX - size.width
+                frame.origin.x = side == .left ? visible.minX + offset : visible.maxX - size.width - offset
                 frame.origin.y = visible.minY
             } else {
                 frame.origin.x = side == .left ? visible.minX + 8 : visible.maxX - size.width - 8
                 frame.origin.y = visible.midY - size.height / 2
             }
-            panel.cornerRadius = Settings.pinFull ? 0 : 12
+            panel.cornerRadius = full ? 0 : 12
         }
         frame.origin.y = max(frame.origin.y, visible.minY + 6)
         panel.setFrame(frame.integral)

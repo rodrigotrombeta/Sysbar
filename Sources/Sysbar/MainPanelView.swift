@@ -20,6 +20,9 @@ final class PanelContext {
     var onTapSection: (SystemStatKind) -> Void = { _ in }
     /// The screen-edge panel shows the per-section pin and Mute mode buttons.
     var showsMute = false
+    /// The page this panel always shows (one pinned column per page); nil =
+    /// the selected page, with page tabs.
+    var page: Int?
 }
 
 struct MainPanelView: View {
@@ -29,8 +32,12 @@ struct MainPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(model: model, showsMute: context.showsMute)
+            PanelHeader(model: model, showsMute: context.showsMute, page: context.page)
                 .controlsLayer()
+            if Settings.pageCount > 1, !model.showSettings {
+                PageTabs(model: model, fixedPage: context.page)
+                    .controlsLayer()
+            }
             Divider().padding(.horizontal, 10)
             ScrollView(.vertical, showsIndicators: contentHeight > model.maxPanelHeight) {
                 Group {
@@ -51,7 +58,7 @@ struct MainPanelView: View {
         .frame(width: panelWidth)
         // "Pin full": the edge window spans the screen height; keep the
         // content at the top.
-        .frame(maxHeight: context.showsMute && Settings.pinFull ? .infinity : nil, alignment: .top)
+        .frame(maxHeight: context.showsMute && Settings.edgeFull ? .infinity : nil, alignment: .top)
         .panelOpacity()
         .onPreferenceChange(SectionFramesKey.self) { context.onSectionFrames($0) }
     }
@@ -59,7 +66,8 @@ struct MainPanelView: View {
     private var sections: some View {
         VStack(spacing: 0) {
             let order = Settings.sectionOrder
-            let visible = order.filter(Settings.isOnDashboard)
+            let page = context.page ?? min(model.currentPage, Settings.pageCount - 1)
+            let visible = order.filter { Settings.isOnPage($0, page) }
             ForEach(visible, id: \.self) { kind in
                 let index = order.firstIndex(of: kind) ?? 0
                 if kind != visible.first { SectionRule() }
@@ -100,6 +108,8 @@ private struct SectionHost: View {
                                                total: s.memory.totalBytes)
             case .claude: ClaudeStatsPanel(model: model)
             case .clock: ClockStatsPanel(model: model)
+            case .calendar: CalendarStatsPanel(model: model)
+            case .battery: BatteryStatsPanel(snapshot: s)
             }
         }
         .overlay(alignment: .top) { dragHandle }
@@ -214,6 +224,7 @@ struct TopProcessesPanel: View {
 private struct PanelHeader: View {
     let model: AppModel
     let showsMute: Bool
+    var page: Int?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -221,7 +232,7 @@ private struct PanelHeader: View {
                 .fixedSize()
                 .layoutPriority(1)
             Spacer(minLength: 4)
-            PinButton(model: model)
+            PinButton(model: model, page: page, isEdge: showsMute)
 
             if showsMute {
                 OpacityButton(model: model)
@@ -322,6 +333,16 @@ private struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text(tr("Clicking the menu bar icon opens", "Clicar no ícone da barra de menus abre"))
+                .font(.system(size: 12, weight: .bold))
+            Picker("", selection: model.iconOpens) {
+                Text(tr("Float", "Flutuante")).tag("float")
+                Text(tr("Full", "Altura toda")).tag("full")
+            }
+            .labelsHidden().pickerStyle(.segmented).fixedSize()
+            .help(tr("Float: at the screen edge, as tall as its content. Full: the whole height of the screen. Click outside to close; 📌 keeps it open.",
+                     "Flutuante: na lateral da tela, com a altura do conteúdo. Altura toda: a altura inteira da tela. Clique fora para fechar; 📌 mantém aberto."))
+            Divider()
             Text(tr("Menu bar icon", "Ícone na barra de menus"))
                 .font(.system(size: 12, weight: .bold))
             Text(tr("Top to bottom = left to right. Drag ≡ to reorder.",
@@ -338,20 +359,16 @@ private struct SettingsView: View {
             Toggle(tr("Show label (CPU, GPU, RAM…)", "Mostrar rótulo (CPU, GPU, RAM…)"), isOn: model.showLabel)
                 .toggleStyle(.checkbox)
                 .font(.system(size: 12))
+            HStack(spacing: 6) {
+                Text(tr("Spacing", "Espaçamento")).font(.system(size: 12))
+                Slider(value: model.iconSpacing, in: 0...20).controlSize(.small).frame(width: 120)
+                Text("\(Int(Settings.iconSpacing)) pt")
+                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+            }
 
             Divider()
             Text(tr("Dashboard", "Dashboard")).font(.system(size: 12, weight: .bold))
-            Text(tr("Sections shown in the Sysbar panel (the menu bar icon is set above).",
-                    "Seções mostradas no painel do Sysbar (o ícone da barra de menus é definido acima)."))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                      alignment: .leading, spacing: 4) {
-                ForEach(SystemStatKind.allCases, id: \.self) { kind in
-                    Toggle(kind.detailTitle, isOn: model.onDashboard(kind))
-                        .toggleStyle(.checkbox)
-                        .font(.system(size: 12))
-                }
-            }
+            PagesSettings(model: model)
             ClockZonesEditor(model: model)
 
             Divider()
@@ -364,6 +381,17 @@ private struct SettingsView: View {
                 }
                 .labelsHidden()
                 .frame(width: 90)
+            }
+            LabeledContent(tr("Charts show", "Gráficos mostram")) {
+                Picker("", selection: model.chartWindow) {
+                    ForEach(Settings.chartWindows, id: \.self) { w in
+                        Text(tr("last ", "últimos ") + StatsFormat.duration(w)).tag(w)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 130)
+                .help(tr("Time span of every history chart (panel, details and menu bar). Kept in memory while Sysbar runs; longer spans average several samples per point.",
+                         "Período de todos os gráficos de histórico (painel, detalhes e barra de menus). Fica na memória enquanto o Sysbar roda; períodos longos fazem a média de várias amostras por ponto."))
             }
             LabeledContent(tr("Language", "Idioma")) {
                 Picker("", selection: model.language) {
@@ -424,18 +452,45 @@ private struct SettingsView: View {
 /// beside each, Float / Full to pin in that style right away.
 private struct PinButton: View {
     let model: AppModel
+    /// The page this (pinned) panel shows, if it's one column per page.
+    var page: Int? = nil
+    /// In an edge panel (Float / Full), not the menu under the icon.
+    var isEdge = false
     @State private var open = false
 
+    /// All pages pinned as columns: always full height, each its own edge.
+    private var columns: Bool { Settings.pinAllPages && Settings.pageCount > 1 }
+
     var body: some View {
-        Button { open.toggle() } label: {
+        Button {
+            // Edge panel (one): the pin pins / unpins it in place; unpinned,
+            // it stays open and closes on a click outside.
+            if isEdge && !columns {
+                model.togglePinKeepingOpen()
+            } else {
+                open.toggle()
+            }
+        } label: {
             Image(systemName: Settings.pinSide == nil ? "pin" : "pin.fill")
         }
         .buttonStyle(.borderless)
-        .help(tr("Pin to screen edge", "Fixar na lateral da tela"))
+        .help(isEdge && !columns
+              ? (Settings.pinSide != nil ? tr("Unpin (closes on a click outside)", "Desafixar (fecha ao clicar fora)")
+                                         : tr("Pin (stays open)", "Fixar (fica aberto)"))
+              : tr("Pin to screen edge", "Fixar na lateral da tela"))
         .popover(isPresented: $open, arrowEdge: .bottom) {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                if columns {
+                    Text(page.map { tr("Page ", "Página ") + Settings.pageTitle($0) } ?? tr("All pages", "Todas as páginas"))
+                        .font(.system(size: 11, weight: .semibold)).gridCellColumns(2)
+                }
                 row(tr("Pin to left edge", "Fixar na lateral esquerda"), .left)
                 row(tr("Pin to right edge", "Fixar na lateral direita"), .right)
+                if columns {
+                    Text(tr("With all pages pinned, every column is full height.",
+                            "Com todas as páginas fixadas, cada coluna tem altura total."))
+                        .font(.system(size: 10)).foregroundStyle(.secondary).gridCellColumns(2)
+                }
                 if Settings.pinSide != nil {
                     Divider().gridCellColumns(2)
                     Button(tr("Unpin", "Desafixar")) { choose(nil, full: Settings.pinFull) }
@@ -455,14 +510,15 @@ private struct PinButton: View {
         GridRow {
             Text(label)
             HStack(spacing: 4) {
-                option(tr("Float", "Flutuante"), side: side, full: false)
+                if !columns { option(tr("Float", "Flutuante"), side: side, full: false) }
                 option(tr("Full", "Altura toda"), side: side, full: true)
             }
         }
     }
 
     private func option(_ title: String, side: PinSide, full: Bool) -> some View {
-        let current = Settings.pinSide == side && Settings.pinFull == full
+        let current = Settings.pinSide != nil && Settings.side(forPage: page) == side
+            && (columns || Settings.pinFull == full)
         return Button { choose(side, full: full) } label: {
             Text(title)
                 .font(.system(size: 11, weight: current ? .semibold : .regular))
@@ -476,7 +532,17 @@ private struct PinButton: View {
 
     private func choose(_ side: PinSide?, full: Bool) {
         open = false
-        Settings.pinFull = full
+        if !columns {
+            Settings.pinFull = full
+            // Remember the choice as the icon's preferred mode, if pinned is.
+            if side != nil { Settings.iconOpens = full ? "full" : "float" }
+        }
+        // Another page's column: only its own edge changes.
+        if columns, let side, let page, page > 0, Settings.pinSide != nil {
+            Settings.setSide(side, forPage: page)
+            model.pagesChanged()
+            return
+        }
         model.pin(side)
     }
 }
@@ -727,5 +793,113 @@ enum ClaudeLogin {
             return error.localizedDescription
         }
         return NSWorkspace.shared.open(url) ? nil : tr("Couldn't open Terminal.", "Não foi possível abrir o Terminal.")
+    }
+}
+
+/// [1] [2] … (or the page names) under the header.
+private struct PageTabs: View {
+    let model: AppModel
+    let fixedPage: Int?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let fixedPage {
+                Text(Settings.pageTitle(fixedPage)).font(.system(size: 11, weight: .semibold))
+            } else {
+                ForEach(0..<Settings.pageCount, id: \.self) { page in
+                    let selected = min(model.currentPage, Settings.pageCount - 1) == page
+                    Button { model.currentPage = page } label: {
+                        Text(Settings.pageTitle(page))
+                            .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Capsule().fill(selected ? Color.accentColor.opacity(0.3) : Color.primary.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+    }
+}
+
+/// Settings › Dashboard: pages, their names, the page of each section, and
+/// whether pinning shows the main page or every page.
+private struct PagesSettings: View {
+    let model: AppModel
+
+    /// Sections grouped by page in tab order, then "Both/All", then hidden;
+    /// within a group, the order they appear in the panel.
+    private var sortedKinds: [SystemStatKind] {
+        func rank(_ kind: SystemStatKind) -> Int {
+            let page = Settings.page(of: kind)
+            if page == Settings.allPages { return Settings.pageCount }
+            if page < 0 { return Settings.pageCount + 1 }
+            return page
+        }
+        let order = Settings.sectionOrder
+        return order.enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .map(\.element)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Stepper(value: model.pageCount, in: 1...6) {
+                Text(tr("Pages: \(Settings.pageCount)", "Páginas: \(Settings.pageCount)")).font(.system(size: 12))
+            }
+            if Settings.pageCount > 1 {
+                ForEach(0..<Settings.pageCount, id: \.self) { page in
+                    HStack(spacing: 6) {
+                        Text("\(page + 1)").font(.system(size: 11).monospacedDigit()).frame(width: 14)
+                        TextField(tr("Name (optional)", "Nome (opcional)"), text: model.pageName(page))
+                            .textFieldStyle(.roundedBorder).controlSize(.small).frame(width: 140)
+                        Button { model.movePage(page, by: -1) } label: { Image(systemName: "chevron.up") }
+                            .disabled(page == 0)
+                            .help(tr("Move page up (left in the tabs)", "Mover página para cima (à esquerda nas abas)"))
+                        Button { model.movePage(page, by: 1) } label: { Image(systemName: "chevron.down") }
+                            .disabled(page == Settings.pageCount - 1)
+                            .help(tr("Move page down (right in the tabs)", "Mover página para baixo (à direita nas abas)"))
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(.leading, 8)
+                }
+            }
+            Text(tr("Each section: hidden, or the page it's on.", "Cada seção: oculta, ou a página onde aparece."))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 3) {
+                ForEach(sortedKinds, id: \.self) { kind in
+                    GridRow {
+                        Text(kind.detailTitle).font(.system(size: 12))
+                        Picker("", selection: model.sectionPage(kind)) {
+                            Text(tr("Hidden", "Oculta")).tag(-1)
+                            ForEach(0..<Settings.pageCount, id: \.self) { page in
+                                Text(tr("Page ", "Página ") + Settings.pageTitle(page)).tag(page)
+                            }
+                            if Settings.pageCount > 1 {
+                                Text(Settings.pageCount == 2 ? tr("Both", "Ambas") : tr("All pages", "Todas"))
+                                    .tag(Settings.allPages)
+                            }
+                        }
+                        .labelsHidden().controlSize(.small).frame(width: 130)
+                    }
+                }
+            }
+            .padding(.leading, 8)
+            if Settings.pageCount > 1 {
+                Text(tr("Pin", "Fixar")).font(.system(size: 12))
+                Picker("", selection: model.pinAllPages) {
+                    Text(tr("Main page only", "Só a página principal")).tag(false)
+                    Text(tr("All pages", "Todas as páginas")).tag(true)
+                }
+                .labelsHidden().pickerStyle(.segmented).fixedSize()
+                .padding(.leading, 8)
+                Text(tr("All pages: each page is pinned as its own full-height column; choose each page's edge with its 📌.",
+                        "Todas as páginas: cada página vira uma coluna fixada de altura total; escolha a lateral de cada uma no 📌 dela."))
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }

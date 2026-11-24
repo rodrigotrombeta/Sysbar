@@ -31,6 +31,8 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case processes
     case claude
     case clock
+    case calendar
+    case battery
 
     var tag: String {
         switch self {
@@ -42,6 +44,8 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
         case .processes: return "TOP"
         case .claude: return "CLAUDE"
         case .clock: return "CLOCK"
+        case .calendar: return "CALENDAR"
+        case .battery: return "BATTERY"
         }
     }
 }
@@ -110,6 +114,8 @@ struct SystemStatsSnapshot: Sendable {
     var memorySwapHistory: [Double] = []
 
     var disk: Disk?
+    /// nil on Macs without a battery.
+    var battery: BatteryInfo?
     /// Claude Code 5-hour / weekly limits (set by the AppDelegate).
     var claude: ClaudeUsage?
     /// Every Claude Code account (default first); `claude` is the first.
@@ -204,10 +210,26 @@ final class SystemStatsSampler {
     private var previousNetBytes: (rx: UInt64, tx: UInt64, time: TimeInterval)?
     private var cachedDisk: SystemStatsSnapshot.Disk?
     private var diskReadAt: TimeInterval = -.infinity
+    private var cachedBattery: BatteryInfo?
+    private var batteryReadAt: TimeInterval = -.infinity
     private let eCoreCount = SystemStatsSampler.readECoreCount()
+
+    // Charts span `Settings.chartWindow`: one point per bucket (the average
+    // of the samples in it), at most `maxPoints` points.
+    private var pending: [String: (sum: Double, count: Int)] = [:]
+    private var commitThisTick = true
+    private var lastCommit: TimeInterval = -.infinity
+    private var lastWindow: TimeInterval = 0
 
     func sample() -> SystemStatsSnapshot {
         var snapshot = SystemStatsSnapshot()
+        let clock = ProcessInfo.processInfo.systemUptime
+        if Settings.chartWindow != lastWindow {
+            lastWindow = Settings.chartWindow
+            resetHistories()
+        }
+        commitThisTick = clock - lastCommit >= Self.bucketSeconds - 0.01
+        if commitThisTick { lastCommit = clock }
 
         snapshot.cpuName = cpuName
         snapshot.eCoreCount = eCoreCount
@@ -232,7 +254,7 @@ final class SystemStatsSampler {
                 if coreHistory.count != cores.count {
                     coreHistory = Array(repeating: [], count: cores.count)
                 }
-                for i in cores.indices { Self.appendHistory(&coreHistory[i], cores[i]) }
+                for i in cores.indices { appendHistory(&coreHistory[i], key: "core\(i)", cores[i]) }
             }
             if let previous = previousTicks,
                let usage = Self.clusterUsage(
@@ -241,9 +263,9 @@ final class SystemStatsSampler {
                 snapshot.eCoreUsage = usage.e
                 snapshot.pCoreUsage = usage.p
                 snapshot.cpuTotalUsage = usage.total
-                Self.appendHistory(&eHistory, usage.e)
-                Self.appendHistory(&pHistory, usage.p)
-                Self.appendHistory(&cpuHistory, usage.total)
+                appendHistory(&eHistory, key: "eHistory", usage.e)
+                appendHistory(&pHistory, key: "pHistory", usage.p)
+                appendHistory(&cpuHistory, key: "cpuHistory", usage.total)
             }
             previousTicks = ticks
         }
@@ -253,15 +275,15 @@ final class SystemStatsSampler {
         if let gpu = devices.first {
             snapshot.gpuUsage = gpu.usage
             snapshot.gpuMemoryInUseBytes = gpu.inUseBytes
-            if let usage = gpu.usage { Self.appendHistory(&gpuHistory, usage) }
-            if let v = gpu.renderer { Self.appendHistory(&gpuRendererHistory, v) }
-            if let v = gpu.tiler { Self.appendHistory(&gpuTilerHistory, v) }
+            if let usage = gpu.usage { appendHistory(&gpuHistory, key: "gpuHistory", usage) }
+            if let v = gpu.renderer { appendHistory(&gpuRendererHistory, key: "gpuRendererHistory", v) }
+            if let v = gpu.tiler { appendHistory(&gpuTilerHistory, key: "gpuTilerHistory", v) }
         }
         if gpuDeviceHistory.count != devices.count {
             gpuDeviceHistory = Array(repeating: [], count: devices.count)
         }
         for i in devices.indices {
-            Self.appendHistory(&gpuDeviceHistory[i], devices[i].usage ?? 0)
+            appendHistory(&gpuDeviceHistory[i], key: "gpuDevice\(i)", devices[i].usage ?? 0)
         }
         snapshot.gpuRendererHistory = gpuRendererHistory
         snapshot.gpuTilerHistory = gpuTilerHistory
@@ -275,13 +297,13 @@ final class SystemStatsSampler {
         }
 
         snapshot.memory = Self.readMemory()
-        Self.appendHistory(&memoryHistory, snapshot.memory.usedFraction)
-        Self.appendHistory(&memoryAppHistory, Double(snapshot.memory.appBytes))
-        Self.appendHistory(&memoryWiredHistory, Double(snapshot.memory.wiredBytes))
-        Self.appendHistory(&memoryCompressedHistory, Double(snapshot.memory.compressedBytes))
-        Self.appendHistory(&memorySwapHistory, Double(snapshot.memory.swapUsedBytes))
+        appendHistory(&memoryHistory, key: "memoryHistory", snapshot.memory.usedFraction)
+        appendHistory(&memoryAppHistory, key: "memoryAppHistory", Double(snapshot.memory.appBytes))
+        appendHistory(&memoryWiredHistory, key: "memoryWiredHistory", Double(snapshot.memory.wiredBytes))
+        appendHistory(&memoryCompressedHistory, key: "memoryCompressedHistory", Double(snapshot.memory.compressedBytes))
+        appendHistory(&memorySwapHistory, key: "memorySwapHistory", Double(snapshot.memory.swapUsedBytes))
         if let gpuMem = snapshot.gpuMemoryFraction {
-            Self.appendHistory(&gpuMemoryHistory, gpuMem)
+            appendHistory(&gpuMemoryHistory, key: "gpuMemoryHistory", gpuMem)
         }
         let now = ProcessInfo.processInfo.systemUptime
         let mem = snapshot.memory
@@ -292,8 +314,8 @@ final class SystemStatsSampler {
                 read: Double(mem.pageinBytes - prev.pagein) / dt,
                 write: Double(mem.pageoutBytes - prev.pageout) / dt)
             snapshot.memoryIO = rate
-            Self.appendHistory(&memoryInHistory, rate.read)
-            Self.appendHistory(&memoryOutHistory, rate.write)
+            appendHistory(&memoryInHistory, key: "memoryInHistory", rate.read)
+            appendHistory(&memoryOutHistory, key: "memoryOutHistory", rate.write)
         }
         previousPageBytes = (mem.pageinBytes, mem.pageoutBytes, now)
 
@@ -307,8 +329,8 @@ final class SystemStatsSampler {
                     read: Double(bytes.read - prev.read) / dt,
                     write: Double(bytes.write - prev.write) / dt)
                 snapshot.diskIO = rate
-                Self.appendHistory(&diskReadHistory, rate.read)
-                Self.appendHistory(&diskWriteHistory, rate.write)
+                appendHistory(&diskReadHistory, key: "diskReadHistory", rate.read)
+                appendHistory(&diskWriteHistory, key: "diskWriteHistory", rate.write)
             }
             previousDiskBytes = (bytes.read, bytes.write, now)
         }
@@ -324,8 +346,8 @@ final class SystemStatsSampler {
                     read: Double(net.rx - prev.rx) / dt,
                     write: Double(net.tx - prev.tx) / dt)
                 snapshot.networkIO = rate
-                Self.appendHistory(&networkInHistory, rate.read)
-                Self.appendHistory(&networkOutHistory, rate.write)
+                appendHistory(&networkInHistory, key: "networkInHistory", rate.read)
+                appendHistory(&networkOutHistory, key: "networkOutHistory", rate.write)
             }
             previousNetBytes = (net.rx, net.tx, now)
         }
@@ -336,6 +358,14 @@ final class SystemStatsSampler {
             diskReadAt = now
         }
         snapshot.disk = cachedDisk
+
+        // The battery registry entry is large; read it every 5 s.
+        if now - batteryReadAt >= 5 {
+            cachedBattery = BatteryInfo.read()
+            batteryReadAt = now
+            if let b = cachedBattery { BatteryHistory.shared.record(b.level) }
+        }
+        snapshot.battery = cachedBattery
 
         var loads = [Double](repeating: 0, count: 3)
         if getloadavg(&loads, 3) == 3 {
@@ -363,13 +393,40 @@ final class SystemStatsSampler {
         return snapshot
     }
 
-    /// Samples kept per series (60 samples ≈ 60 s at the default 1 s tick).
-    static let historyLimit = 60
+    static let maxPoints = 120
 
-    private static func appendHistory(_ buffer: inout [Double], _ value: Double) {
-        buffer.append(value)
-        if buffer.count > historyLimit {
-            buffer.removeFirst(buffer.count - historyLimit)
+    /// Points per series: the chart window divided by the refresh interval,
+    /// at most `maxPoints` (longer windows average several samples per point).
+    static var historyLimit: Int {
+        max(2, min(maxPoints, Int((Settings.chartWindow / max(0.1, Settings.interval)).rounded())))
+    }
+
+    /// Seconds covered by one point.
+    static var bucketSeconds: TimeInterval { Settings.chartWindow / Double(historyLimit) }
+
+    private func appendHistory(_ buffer: inout [Double], key: String, _ value: Double) {
+        let acc = pending[key] ?? (0, 0)
+        guard commitThisTick else {
+            pending[key] = (acc.sum + value, acc.count + 1)
+            return
+        }
+        buffer.append((acc.sum + value) / Double(acc.count + 1))
+        pending[key] = nil
+        let limit = Self.historyLimit
+        if buffer.count > limit { buffer.removeFirst(buffer.count - limit) }
+    }
+
+    /// The chart window changed: start the histories over.
+    private func resetHistories() {
+        pending = [:]
+        lastCommit = -.infinity
+        coreHistory = []; gpuDeviceHistory = []
+        for keyPath in [\SystemStatsSampler.gpuRendererHistory, \.gpuTilerHistory, \.eHistory, \.pHistory,
+                        \.gpuHistory, \.cpuHistory, \.memoryHistory, \.memoryAppHistory, \.memoryWiredHistory,
+                        \.memoryCompressedHistory, \.memorySwapHistory, \.gpuMemoryHistory, \.diskReadHistory,
+                        \.diskWriteHistory, \.memoryInHistory, \.memoryOutHistory, \.networkInHistory,
+                        \.networkOutHistory] {
+            self[keyPath: keyPath] = []
         }
     }
 
