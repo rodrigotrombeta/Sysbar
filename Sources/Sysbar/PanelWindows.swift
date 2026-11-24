@@ -136,6 +136,8 @@ final class HostedPanel {
         let backgroundOpacity = Settings.opacity(for: opacityKey).background
         window.alphaValue = 1
         background.alphaValue = backgroundOpacity
+        // At 100 % nothing of the blur may show through: drop it entirely.
+        background.isHidden = backgroundOpacity >= 0.999
         solid.alphaValue = backgroundOpacity
         solid.needsDisplay = true
         let shadow = backgroundOpacity > 0.05
@@ -443,9 +445,15 @@ extension NSScreen {
 
 /// Fills with the window background color of the current appearance.
 final class SolidBackgroundView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        dirtyRect.fill()
+    // An opaque layer color (resolved for the current appearance), not
+    // draw(_:): a layer-backed view's drawn content isn't guaranteed opaque.
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        var color = NSColor.windowBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            color = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)?.withAlphaComponent(1).cgColor ?? color
+        }
+        layer?.backgroundColor = color
     }
     override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }

@@ -231,6 +231,9 @@ private struct PanelHeader: View {
             Text("Sysbar").font(.system(size: 13, weight: .bold))
                 .fixedSize()
                 .layoutPriority(1)
+            if showsMute && Settings.pinSide != nil {
+                SideArrows(model: model, page: page)
+            }
             Spacer(minLength: 4)
             PinButton(model: model, page: page, isEdge: showsMute)
 
@@ -264,6 +267,34 @@ private struct PanelHeader: View {
         .font(.system(size: 13))
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+    }
+}
+
+/// "< >" beside the title of a pinned panel: send this page to the left or
+/// right edge of the screen.
+private struct SideArrows: View {
+    let model: AppModel
+    var page: Int?
+
+    var body: some View {
+        let current = Settings.side(forPage: page)
+        HStack(spacing: 2) {
+            arrow("chevron.left", .left, current: current,
+                  help: tr("Send to the left edge", "Enviar para a lateral esquerda"))
+            arrow("chevron.right", .right, current: current,
+                  help: tr("Send to the right edge", "Enviar para a lateral direita"))
+        }
+        .font(.system(size: 11, weight: .semibold))
+    }
+
+    private func arrow(_ symbol: String, _ side: PinSide, current: PinSide, help: String) -> some View {
+        Button { model.sendPage(page, to: side) } label: {
+            Image(systemName: symbol)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .disabled(current == side)
+        .help(help)
     }
 }
 

@@ -95,11 +95,34 @@ final class AppModel {
     }
 
     var pinAllPages: Binding<Bool> {
-        Binding(get: { Settings.pinAllPages }, set: { Settings.pinAllPages = $0; self.pagesChanged() })
+        Binding(get: { Settings.pinAllPages }, set: {
+            Settings.pinAllPages = $0
+            // "All pages" pins right away, so every page opens as a column.
+            if $0 && Settings.pinSide == nil {
+                self.pin(Settings.lastPinSide)
+            } else {
+                self.pagesChanged()
+            }
+        })
     }
 
     /// Pages or pinning changed: rebuild the pinned columns.
     @ObservationIgnored var pagesChanged: () -> Void = {}
+
+    /// Moves a pinned page's column (nil = the single pinned panel) to an edge.
+    func sendPage(_ page: Int?, to side: PinSide) {
+        if let page, page > 0 {
+            Settings.setSide(side, forPage: page)
+            pagesChanged()
+            return
+        }
+        // The main page: other pages that follow its edge keep theirs.
+        for other in 1..<max(1, Settings.pageCount) {
+            Settings.setSide(Settings.side(forPage: other), forPage: other)
+        }
+        Settings.pinSide = side
+        pagesChanged()
+    }
 
     var iconOpens: Binding<String> {
         Binding(get: { Settings.iconOpens }, set: {
