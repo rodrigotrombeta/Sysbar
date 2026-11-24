@@ -233,6 +233,10 @@ final class SettingsStore {
     var opacity: OpacitySet {
         didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
+    /// Names given to Claude Code accounts (by account id; "" = main).
+    var claudeAccountNames: [String: String] {
+        didSet { defaults.set(claudeAccountNames, forKey: "claudeAccountNames") }
+    }
     /// Fetch the Claude limits from Anthropic (ClaudeUsageFetcher).
     var claudeFetch: Bool {
         didSet { defaults.set(claudeFetch, forKey: "claudeFetch") }
@@ -315,6 +319,7 @@ final class SettingsStore {
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
         separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
         claudeFetch = d.bool(forKey: "claudeFetch")
+        claudeAccountNames = d.dictionary(forKey: "claudeAccountNames") as? [String: String] ?? [:]
         textColor = (d.array(forKey: "textColor") as? [Double]).flatMap { $0.count == 3 ? $0 : nil }
         panelOpacities = d.data(forKey: "panelOpacitySets")
             .flatMap { try? JSONDecoder().decode([String: OpacitySet].self, from: $0) } ?? [:]
@@ -430,6 +435,11 @@ enum Settings {
     static var opacity: OpacitySet {
         get { store.opacity }
         set { store.opacity = newValue }
+    }
+
+    static var claudeAccountNames: [String: String] {
+        get { store.claudeAccountNames }
+        set { store.claudeAccountNames = newValue }
     }
 
     static var claudeFetch: Bool {

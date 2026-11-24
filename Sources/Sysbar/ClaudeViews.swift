@@ -38,6 +38,11 @@ func claudeVerdict(_ w: ClaudeWindow, now: Date = Date()) -> String {
         return tr("Limit reached · resets \(shortTime(w.resetsAt))",
                   "Limite atingido · renova \(shortTime(w.resetsAt))")
     }
+    if w.isTooEarly(now: now) {
+        let wait = w.start.addingTimeInterval(w.duration * ClaudeWindow.minimumElapsed)
+        return tr("Too early to project · pace from \(shortTime(wait)) · resets \(shortTime(w.resetsAt))",
+                  "Cedo para projetar · ritmo a partir de \(shortTime(wait)) · renova \(shortTime(w.resetsAt))")
+    }
     guard let p = w.projection(now: now) else {
         return tr("Not used yet in this window", "Ainda sem uso nesta janela")
     }
@@ -197,7 +202,7 @@ private struct ClaudeWindowRow: View {
                 .graphicsLayer()
                 Text(claudeVerdict(window))
                     .font(.system(size: 10.5))
-                    .foregroundStyle(riskColor(window.risk()))
+                    .foregroundStyle(window.isTooEarly() ? Color.secondary : riskColor(window.risk()))
                     .textLayer()
             }
         }
@@ -208,7 +213,7 @@ private struct ClaudeWindowRow: View {
 
 struct ClaudeStatsPanel: View {
     let model: AppModel
-    private var usage: ClaudeUsage? { model.snapshot.claude }
+    private var accounts: [ClaudeUsage] { model.snapshot.claudeAccounts }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -224,11 +229,16 @@ struct ClaudeStatsPanel: View {
             }
             .textLayer()
             .frame(maxWidth: .infinity, alignment: .center)
-            if let usage {
-                ClaudeWindowRow(title: tr("5-hour limit", "Limite de 5 horas"), window: usage.fiveHour, color: claudeFiveColor)
-                ClaudeWindowRow(title: tr("Weekly limit", "Limite semanal"), window: usage.sevenDay, color: claudeWeekColor)
-                ClaudeLimitChart(usage: usage, height: 70, showLegend: false)
-                ClaudeUpdatedRow(model: model, usage: usage)
+            if !accounts.isEmpty {
+                // One account under the other.
+                ForEach(Array(accounts.enumerated()), id: \.element.account) { index, usage in
+                    if index > 0 { Divider().padding(.vertical, 2) }
+                    if accounts.count > 1 { ClaudeAccountTitle(usage: usage) }
+                    ClaudeWindowRow(title: tr("5-hour limit", "Limite de 5 horas"), window: usage.fiveHour, color: claudeFiveColor)
+                    ClaudeWindowRow(title: tr("Weekly limit", "Limite semanal"), window: usage.sevenDay, color: claudeWeekColor)
+                    ClaudeLimitChart(usage: usage, height: 70, showLegend: false)
+                }
+                ClaudeUpdatedRow(model: model, usage: accounts.max { $0.updatedAt < $1.updatedAt }!)
             } else {
                 ClaudeNotConnected()
             }
@@ -279,13 +289,18 @@ struct ClaudeDetail: View {
     let model: AppModel
 
     var body: some View {
-        let usage = model.snapshot.claude
+        let accounts = model.snapshot.claudeAccounts
         VStack(alignment: .leading, spacing: 8) {
-            if let usage {
-                ClaudeWindowRow(title: tr("5-hour limit", "Limite de 5 horas"), window: usage.fiveHour, color: claudeFiveColor)
-                ClaudeWindowRow(title: tr("Weekly limit", "Limite semanal"), window: usage.sevenDay, color: claudeWeekColor)
-                SectionTitle(text: tr("Usage vs. time in each window", "Uso vs. tempo em cada janela"))
-                ClaudeLimitChart(usage: usage, height: 150)
+            if let latest = accounts.max(by: { $0.updatedAt < $1.updatedAt }) {
+                ForEach(Array(accounts.enumerated()), id: \.element.account) { index, usage in
+                    if index > 0 { Divider().padding(.vertical, 2) }
+                    if accounts.count > 1 { ClaudeAccountTitle(usage: usage) }
+                    ClaudeWindowRow(title: tr("5-hour limit", "Limite de 5 horas"), window: usage.fiveHour, color: claudeFiveColor)
+                    ClaudeWindowRow(title: tr("Weekly limit", "Limite semanal"), window: usage.sevenDay, color: claudeWeekColor)
+                    SectionTitle(text: tr("Usage vs. time in each window", "Uso vs. tempo em cada janela"))
+                    ClaudeLimitChart(usage: usage, height: accounts.count > 1 ? 110 : 150)
+                }
+                let usage = latest
                 Text(tr("Solid: used so far. Dashed: where the current pace leads at the reset. Gray diagonal: an even pace (100 % right at the reset). A red dot marks when you'd hit the limit.",
                         "Linha cheia: uso até agora. Tracejada: aonde o ritmo atual leva até a renovação. Diagonal cinza: ritmo uniforme (100 % exatamente na renovação). O ponto vermelho marca quando você atingiria o limite."))
                     .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -318,6 +333,24 @@ private struct ClaudeUpdatedRow: View {
             .buttonStyle(.borderless)
             .help(tr("Re-read Claude Code's latest reading and recompute the pace. New readings arrive when Claude Code updates its status line (while you use it).",
                      "Relê a última leitura do Claude Code e recalcula o ritmo. Leituras novas chegam quando o Claude Code atualiza a linha de status (enquanto você o usa)."))
+        }
+    }
+}
+
+/// Account name and plan, above each account when there are several.
+private struct ClaudeAccountTitle: View {
+    let usage: ClaudeUsage
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.crop.circle").font(.system(size: 11))
+            Text(ClaudeUsageStore.displayName(usage)).font(.system(size: 12, weight: .semibold))
+            if let plan = usage.plan {
+                Text(plan.capitalized)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.primary.opacity(0.1)))
+            }
         }
     }
 }

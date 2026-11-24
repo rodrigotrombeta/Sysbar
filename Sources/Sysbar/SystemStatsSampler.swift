@@ -112,6 +112,8 @@ struct SystemStatsSnapshot: Sendable {
     var disk: Disk?
     /// Claude Code 5-hour / weekly limits (set by the AppDelegate).
     var claude: ClaudeUsage?
+    /// Every Claude Code account (default first); `claude` is the first.
+    var claudeAccounts: [ClaudeUsage] = []
     /// Disk read/write throughput (all block-storage drivers).
     var diskIO: IORate?
     /// Memory page-ins (read) / page-outs (write).

@@ -89,7 +89,17 @@ final class AppModel {
 
     func refreshClaude() {
         if Settings.claudeFetch { fetchClaude() }
-        snapshot.claude = ClaudeUsageStore.reload()
+        refreshClaudeFromDisk()
+    }
+
+    func refreshClaudeFromDisk() {
+        snapshot.claudeAccounts = ClaudeUsageStore.reloadAll()
+        snapshot.claude = snapshot.claudeAccounts.first
+    }
+
+    func claudeAccountName(_ account: String) -> Binding<String> {
+        Binding(get: { Settings.claudeAccountNames[account] ?? "" },
+                set: { Settings.claudeAccountNames[account] = $0.isEmpty ? nil : $0 })
     }
 
     func moveSection(_ kind: SystemStatKind, to index: Int) {

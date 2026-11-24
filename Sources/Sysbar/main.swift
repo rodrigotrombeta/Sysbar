@@ -50,7 +50,8 @@ enum Preview {
             model.snapshot = sampler.sample()
         }
         model.processes = processes.sample()
-        model.snapshot.claude = ClaudeUsageStore.load()
+        model.snapshot.claudeAccounts = ClaudeUsageStore.loadAll()
+        model.snapshot.claude = model.snapshot.claudeAccounts.first
         model.expandedCores = true
         model.expandedGPUs = true
         model.diskBreakdown = DiskBreakdown.measure()

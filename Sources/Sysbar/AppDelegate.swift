@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         claudeFetcher.onChange = { [weak self] status in
             guard let self else { return }
             self.model.claudeFetchStatus = status
-            if case .ok = status { self.model.snapshot.claude = ClaudeUsageStore.reload() }
+            if case .ok = status { self.model.refreshClaudeFromDisk() }
         }
         model.fetchClaude = { [weak self] in self?.claudeFetcher.fetch() }
         if Settings.pinSide != nil { edgePanel.show() }
@@ -103,7 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func tick() {
         var snapshot = sampler.sample()
-        snapshot.claude = ClaudeUsageStore.load()
+        snapshot.claudeAccounts = ClaudeUsageStore.loadAll()
+        snapshot.claude = snapshot.claudeAccounts.first
         claudeFetcher.tick()
         model.snapshot = snapshot
         // Process scanning only while something shows processes.

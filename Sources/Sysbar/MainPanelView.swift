@@ -623,6 +623,7 @@ private struct ClaudeConnectionRow: View {
                 case .idle: EmptyView()
                 }
             }
+            ClaudeAccountsEditor(model: model)
             HStack(spacing: 8) {
                 Text(tr("Terminal status line:", "Linha de status do terminal:")).font(.system(size: 10.5))
                 Button(connected ? tr("Disconnect", "Desconectar") : tr("Connect", "Conectar")) {
@@ -643,5 +644,88 @@ private struct ClaudeConnectionRow: View {
             }
         }
         .onAppear { connected = ClaudeUsageStore.isConnected() }
+    }
+}
+
+/// Names of the Claude Code accounts found, and how to add another one.
+private struct ClaudeAccountsEditor: View {
+    let model: AppModel
+    @State private var newName = ""
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let accounts = ClaudeUsageStore.accounts()
+            if !accounts.isEmpty {
+                Text(tr("Accounts (shown one under the other)", "Contas (mostradas uma embaixo da outra)"))
+                    .font(.system(size: 11.5))
+                ForEach(accounts, id: \.self) { account in
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.crop.circle").font(.system(size: 11))
+                        TextField(account.isEmpty ? tr("Main account", "Conta principal") : account,
+                                  text: model.claudeAccountName(account))
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .frame(width: 170)
+                    }
+                    .padding(.leading, 8)
+                }
+            }
+            HStack(spacing: 6) {
+                TextField(tr("New account name, e.g. work", "Nome da nova conta, ex.: trabalho"), text: $newName)
+                    .textFieldStyle(.roundedBorder).controlSize(.small).frame(width: 170)
+                Button(tr("Add account…", "Adicionar conta…")) {
+                    error = ClaudeLogin.start(name: newName)
+                    if error == nil { newName = "" }
+                }
+                .controlSize(.small)
+                .disabled(ClaudeLogin.folderName(newName).isEmpty)
+            }
+            .padding(.leading, 8)
+            Text(tr("Opens Terminal and starts Claude Code's login for that account. It shows a login link: copy it into the browser where that account is signed in. Then click Refresh.",
+                    "Abre o Terminal e inicia o login do Claude Code para essa conta. Ele mostra um link de login: copie-o no navegador onde essa conta está logada. Depois clique em Atualizar."))
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error {
+                Text(error).font(.system(size: 10)).foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+/// Logs in another Claude Code account: its own config folder
+/// (~/.claude-<name>) and `claude auth login`, run in Terminal so the login
+/// link can be copied into any browser.
+enum ClaudeLogin {
+    static func folderName(_ name: String) -> String {
+        name.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    /// nil on success, else an error to show.
+    static func start(name: String) -> String? {
+        let folder = folderName(name)
+        guard !folder.isEmpty else { return nil }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+        let claude = candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? "claude"
+        let script = """
+        #!/bin/zsh
+        export CLAUDE_CONFIG_DIR="$HOME/.claude-\(folder)"
+        mkdir -p "$CLAUDE_CONFIG_DIR"
+        echo "Sysbar: logging in the Claude account '\(name)' (config: $CLAUDE_CONFIG_DIR)."
+        echo "Copy the login link below into the browser where that account is signed in."
+        echo
+        '\(claude)' auth login
+        echo
+        echo "Done. Back in Sysbar, click Refresh in the Claude section. You can close this window."
+        """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sysbar-claude-login-\(folder).command")
+        do {
+            try script.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        } catch {
+            return error.localizedDescription
+        }
+        return NSWorkspace.shared.open(url) ? nil : tr("Couldn't open Terminal.", "Não foi possível abrir o Terminal.")
     }
 }

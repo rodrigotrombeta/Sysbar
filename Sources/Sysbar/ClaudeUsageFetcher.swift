@@ -4,9 +4,10 @@
 // Keychain item; macOS asks once whether Sysbar may read it). Works whether
 // Claude Code runs in a terminal, an editor or another app.
 //
-// The token is only read from the Keychain for each request and sent to
-// api.anthropic.com; it is never stored, logged or refreshed by Sysbar
-// (Claude Code renews it itself). This endpoint is internal to Claude Code and
+// The token is read from the Keychain once per launch (kept in memory only,
+// read again if Anthropic answers 401) and sent only to api.anthropic.com;
+// it is never written to disk, logged or refreshed by Sysbar (Claude Code
+// renews it itself). This endpoint is internal to Claude Code and
 // undocumented, so it may change.
 
 import Foundation
@@ -33,23 +34,57 @@ final class ClaudeUsageFetcher {
         lastAttempt = Date()
         status = .fetching
         Task.detached(priority: .utility) {
-            let result = await Self.request()
+            let accounts = Self.loginServices()
+            var results: [(String, Result<[String: Any], FetchError>)] = []
+            for (service, account) in accounts {
+                results.append((account, await Self.request(service: service)))
+            }
             await MainActor.run {
-                switch result {
-                case .success(let entry):
-                    ClaudeUsageStore.append(entry)
-                    self.status = .ok(Date())
-                case .failure(let error):
-                    self.status = .failed(error.message)
+                var failures: [String] = []
+                for (account, result) in results {
+                    switch result {
+                    case .success(let entry): ClaudeUsageStore.append(entry, account: account)
+                    case .failure(let error):
+                        failures.append(accounts.count > 1
+                            ? "\(account.isEmpty ? tr("Main account", "Conta principal") : account): \(error.message)"
+                            : error.message)
+                    }
+                }
+                if accounts.isEmpty {
+                    self.status = .failed(tr("No Claude Code login found in the Keychain.",
+                                             "Nenhum login do Claude Code encontrado no Chaves."))
+                } else {
+                    self.status = failures.isEmpty ? .ok(Date()) : .failed(failures.joined(separator: "\n"))
                 }
             }
         }
     }
 
+    /// Claude Code's logins: its Keychain items "Claude Code-credentials"
+    /// (default) and "Claude Code-credentials-<id>" (other config dirs).
+    /// Listing reads only names, so it doesn't prompt.
+    nonisolated static func loginServices() -> [(service: String, account: String)] {
+        let base = "Claude Code-credentials"
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        var items: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &items) == errSecSuccess,
+              let list = items as? [[String: Any]] else { return [] }
+        let services = Set(list.compactMap { $0[kSecAttrService as String] as? String }
+            .filter { $0 == base || $0.hasPrefix(base + "-") })
+        return services.sorted().map { service in
+            let id = service == base ? "" : String(service.dropFirst(base.count + 1))
+            return (service, id.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+        }
+    }
+
     struct FetchError: Error { let message: String }
 
-    nonisolated private static func request() async -> Result<[String: Any], FetchError> {
-        guard let token = accessToken() else {
+    nonisolated private static func request(service: String) async -> Result<[String: Any], FetchError> {
+        guard let (token, plan) = cachedLogin(service: service) else {
             return .failure(FetchError(message: tr("Claude Code login not found or not allowed in the Keychain.",
                                                    "Login do Claude Code não encontrado ou não permitido no Chaves.")))
         }
@@ -64,6 +99,7 @@ final class ClaudeUsageFetcher {
             return .failure(FetchError(message: tr("No connection to Anthropic.", "Sem conexão com a Anthropic.")))
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 { forgetLogin(service: service) }  // renewed by Claude Code: read it again next time
         guard code == 200 else {
             return .failure(FetchError(message: code == 401
                 ? tr("Login expired: open Claude Code once to renew it.", "Login expirado: abra o Claude Code uma vez para renová-lo.")
@@ -73,6 +109,7 @@ final class ClaudeUsageFetcher {
             return .failure(FetchError(message: tr("Unexpected answer from Anthropic.", "Resposta inesperada da Anthropic.")))
         }
         var entry: [String: Any] = ["t": Date().timeIntervalSince1970]
+        if let plan { entry["plan"] = plan }
         for (key, name) in [("five_hour", "five"), ("seven_day", "seven")] {
             guard let w = obj[key] as? [String: Any],
                   let p = (w["utilization"] as? NSNumber)?.doubleValue, p >= 0, p <= 1000 else { continue }
@@ -81,7 +118,7 @@ final class ClaudeUsageFetcher {
             guard let reset else { continue }
             entry[name] = ["p": p, "r": reset]
         }
-        guard entry.count > 1 else {
+        guard entry["five"] != nil || entry["seven"] != nil else {
             return .failure(FetchError(message: tr("No limits in Anthropic's answer (fields: \(obj.keys.sorted().joined(separator: ", "))).",
                                                    "Sem limites na resposta da Anthropic (campos: \(obj.keys.sorted().joined(separator: ", ")))).")))
         }
@@ -96,11 +133,27 @@ final class ClaudeUsageFetcher {
         return f.date(from: s)
     }
 
-    /// Claude Code's OAuth access token, read from the Keychain each time.
-    nonisolated private static func accessToken() -> String? {
+    /// Logins read this session, so the Keychain (and its password prompt)
+    /// is used once per account per launch, and again only after a 401.
+    nonisolated(unsafe) private static var logins: [String: (token: String, plan: String?)] = [:]
+    nonisolated private static let loginsLock = NSLock()
+
+    nonisolated private static func cachedLogin(service: String) -> (token: String, plan: String?)? {
+        if let cached = loginsLock.withLock({ logins[service] }) { return cached }
+        guard let fresh = login(service: service) else { return nil }
+        loginsLock.withLock { logins[service] = fresh }
+        return fresh
+    }
+
+    nonisolated private static func forgetLogin(service: String) {
+        loginsLock.withLock { _ = logins.removeValue(forKey: service) }
+    }
+
+    /// A login's OAuth access token (and plan), read from the Keychain.
+    nonisolated private static func login(service: String) -> (token: String, plan: String?)? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
+            kSecAttrService as String: service,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -110,6 +163,6 @@ final class ClaudeUsageFetcher {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = obj["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String, !token.isEmpty else { return nil }
-        return token
+        return (token, oauth["subscriptionType"] as? String)
     }
 }

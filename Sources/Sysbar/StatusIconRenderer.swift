@@ -210,7 +210,7 @@ enum StatusIconRenderer {
         }
     }
 
-    /// Two lines, "5h 42%" over "7d 18%"; in color, each tag turns orange or
+    /// Two lines, "42% 5h" over "18% 7d"; in color, each tag turns orange or
     /// red when that window is projected to come close to / hit its limit.
     private static func drawLimits(_ usage: ClaudeUsage?, textColor: NSColor, mono: Bool, rect: NSRect) {
         let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
@@ -222,12 +222,13 @@ enum StatusIconRenderer {
             case 1: .systemOrange
             default: textColor.withAlphaComponent(0.6)
             }
+            // "6% 5h": right-aligned, so the 5h / 7d tags line up.
             let s = NSMutableAttributedString(
-                string: tag + " ",
-                attributes: [.font: font, .foregroundColor: mono ? textColor : riskColor, .paragraphStyle: para])
+                string: (w.map { "\(Int($0.percent.rounded()))%" } ?? "–") + " ",
+                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para])
             s.append(NSAttributedString(
-                string: w.map { "\(Int($0.percent.rounded()))%" } ?? "–",
-                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
+                string: tag,
+                attributes: [.font: font, .foregroundColor: mono ? textColor : riskColor, .paragraphStyle: para]))
             s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
         }
         line("5h", usage?.fiveHour, y: rect.minY + 8)

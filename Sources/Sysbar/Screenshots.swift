@@ -33,7 +33,8 @@ enum Screenshots {
             if i % 8 == 0 { model.processes = processes.sample().anonymized() }
         }
         model.processes = processes.sample().anonymized()
-        model.snapshot.claude = ClaudeUsageStore.load()
+        model.snapshot.claudeAccounts = ClaudeUsageStore.loadAll()
+        model.snapshot.claude = model.snapshot.claudeAccounts.first
 
         for dark in [true, false] {
             let suffix = dark ? "dark" : "light"

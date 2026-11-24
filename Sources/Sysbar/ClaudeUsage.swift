@@ -34,8 +34,18 @@ struct ClaudeWindow: Sendable, Equatable {
         var hitsLimitAt: Date?
     }
 
+    /// Share of the window that must pass before the pace means anything:
+    /// a few minutes in, 6 % used would "project" to 160 %.
+    static let minimumElapsed = 0.15
+
+    /// Too early in the window to project (see `minimumElapsed`).
+    func isTooEarly(now: Date = Date()) -> Bool {
+        percent < 100 && elapsedFraction(at: now) < Self.minimumElapsed
+    }
+
     func projection(now: Date = Date()) -> Projection? {
         let elapsed = now.timeIntervalSince(start)
+        guard !isTooEarly(now: now) else { return nil }
         guard elapsed > 60, percent > 0 else { return percent > 0 ? nil : Projection(atReset: 0) }
         let rate = percent / elapsed  // percent per second
         let atReset = rate * duration
@@ -62,6 +72,11 @@ struct ClaudePoint: Sendable, Equatable {
 }
 
 struct ClaudeUsage: Sendable, Equatable {
+    /// Account id: "" for Claude Code's default login, else the suffix of
+    /// its Keychain item (one per CLAUDE_CONFIG_DIR).
+    var account = ""
+    /// Subscription type reported with the login (e.g. "max"), if known.
+    var plan: String?
     var fiveHour: ClaudeWindow?
     var sevenDay: ClaudeWindow?
     /// Time of the last reading from Claude Code.
@@ -76,7 +91,29 @@ enum ClaudeUsageStore {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Sysbar", isDirectory: true)
     }
-    static var historyFile: URL { directory.appendingPathComponent("claude-usage.jsonl") }
+    static var historyFile: URL { historyFile(for: "") }
+
+    /// One history file per account ("" = the default login).
+    static func historyFile(for account: String) -> URL {
+        directory.appendingPathComponent(account.isEmpty ? "claude-usage.jsonl" : "claude-usage-\(account).jsonl")
+    }
+
+    /// Accounts with a history file, default first.
+    static func accounts() -> [String] {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let ids = files.compactMap { name -> String? in
+            if name == "claude-usage.jsonl" { return "" }
+            guard name.hasPrefix("claude-usage-"), name.hasSuffix(".jsonl") else { return nil }
+            return String(name.dropFirst("claude-usage-".count).dropLast(".jsonl".count))
+        }
+        return ids.sorted { ($0.isEmpty ? 0 : 1, $0) < ($1.isEmpty ? 0 : 1, $1) }
+    }
+
+    /// Display name: the one set in Settings, else "Main" / the account id.
+    static func displayName(_ usage: ClaudeUsage) -> String {
+        if let custom = Settings.claudeAccountNames[usage.account], !custom.isEmpty { return custom }
+        return usage.account.isEmpty ? tr("Main account", "Conta principal") : usage.account
+    }
     /// The statusLine setting Claude Code had before Sysbar connected.
     static var previousStatusLineFile: URL { directory.appendingPathComponent("claude-statusline-previous.json") }
     static var claudeSettings: URL {
@@ -87,21 +124,28 @@ enum ClaudeUsageStore {
 
     // MARK: Reading (Sysbar)
 
-    private static var cache: (modified: Date, usage: ClaudeUsage?)?
+    private static var cache: [String: (modified: Date, usage: ClaudeUsage?)] = [:]
 
-    /// Re-reads the history file now (the refresh button).
-    static func reload() -> ClaudeUsage? {
-        cache = nil
-        return load()
+    /// Re-reads the history files now (the refresh button).
+    static func reloadAll() -> [ClaudeUsage] {
+        cache = [:]
+        return loadAll()
     }
 
-    /// Current usage from the history file (re-read only when it changes).
-    static func load() -> ClaudeUsage? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: historyFile.path),
+    /// Every account's usage, default first.
+    static func loadAll() -> [ClaudeUsage] {
+        accounts().compactMap(load)
+    }
+
+    /// One account's usage (re-read only when its file changes).
+    static func load(_ account: String = "") -> ClaudeUsage? {
+        let file = historyFile(for: account)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
               let modified = attrs[.modificationDate] as? Date else { return nil }
-        if let cache, cache.modified == modified { return cache.usage }
-        let usage = parse((try? String(contentsOf: historyFile, encoding: .utf8)) ?? "")
-        cache = (modified, usage)
+        if let cached = cache[account], cached.modified == modified { return cached.usage }
+        var usage = parse((try? String(contentsOf: file, encoding: .utf8)) ?? "")
+        usage?.account = account
+        cache[account] = (modified, usage)
         return usage
     }
 
@@ -109,12 +153,14 @@ enum ClaudeUsageStore {
         var five: [(Date, Double, Date)] = []
         var seven: [(Date, Double, Date)] = []
         var last: Date?
+        var plan: String?
         for line in text.split(separator: "\n") {
             guard let data = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let t = obj["t"] as? Double else { continue }
             let date = Date(timeIntervalSince1970: t)
             last = date
+            if let p = obj["plan"] as? String { plan = p }
             if let w = obj["five"] as? [String: Double], let p = w["p"], let r = w["r"] {
                 five.append((date, p, Date(timeIntervalSince1970: r)))
             }
@@ -123,7 +169,7 @@ enum ClaudeUsageStore {
             }
         }
         guard let last else { return nil }
-        return ClaudeUsage(fiveHour: window(five, duration: fiveHours),
+        return ClaudeUsage(plan: plan, fiveHour: window(five, duration: fiveHours),
                            sevenDay: window(seven, duration: sevenDays),
                            updatedAt: last)
     }
@@ -185,8 +231,10 @@ enum ClaudeUsageStore {
         append(entry)
     }
 
-    /// Appends one reading ({"t", "five"?, "seven"?}) to the history file.
-    static func append(_ entry: [String: Any]) {
+    /// Appends one reading ({"t", "five"?, "seven"?, "plan"?}) to an
+    /// account's history file.
+    static func append(_ entry: [String: Any], account: String = "") {
+        let historyFile = historyFile(for: account)
         guard entry.count > 1, var line = try? JSONSerialization.data(withJSONObject: entry) else { return }
         line.append(0x0A)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -197,11 +245,11 @@ enum ClaudeUsageStore {
         } else {
             try? line.write(to: historyFile)
         }
-        trimIfLarge()
+        trimIfLarge(historyFile)
     }
 
     /// Keeps the last 8 days once the file passes ~1 MB.
-    private static func trimIfLarge() {
+    private static func trimIfLarge(_ historyFile: URL) {
         guard let size = (try? FileManager.default.attributesOfItem(atPath: historyFile.path))?[.size] as? Int,
               size > 1_000_000, let text = try? String(contentsOf: historyFile, encoding: .utf8) else { return }
         let cutoff = Date().addingTimeInterval(-8 * 86400).timeIntervalSince1970
