@@ -247,7 +247,7 @@ struct DiskStatsPanel: View {
 
     /// Shared Y scale for both series, never below 256 KB/s.
     private var ioPeak: Double {
-        max(256_000, snapshot.diskReadHistory.max() ?? 0, snapshot.diskWriteHistory.max() ?? 0)
+        max(256_000, snapshot.diskReadHistory.finiteMax ?? 0, snapshot.diskWriteHistory.finiteMax ?? 0)
     }
 }
 
@@ -290,7 +290,7 @@ struct NetworkStatsPanel: View {
     }
 
     private var peak: Double {
-        max(64_000, snapshot.networkInHistory.max() ?? 0, snapshot.networkOutHistory.max() ?? 0)
+        max(64_000, snapshot.networkInHistory.finiteMax ?? 0, snapshot.networkOutHistory.finiteMax ?? 0)
     }
 }
 

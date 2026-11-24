@@ -244,7 +244,8 @@ private let wiredColor = Color(nsColor: MemoryPalette.wired)
 private let compressedColor = Color(nsColor: MemoryPalette.compressed)
 
 private func average(_ values: [Double]) -> Double {
-    values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
+    let real = values.filter(\.isFinite)
+    return real.isEmpty ? 0 : real.reduce(0, +) / Double(real.count)
 }
 
 private struct MemoryDetail: View {
@@ -303,7 +304,7 @@ private struct MemoryDetail: View {
                 .map { StackedHistoryChart.Layer(values: $0.values.map { $0 / total }, color: $0.color) }
                 .sorted { average($0.values) < average($1.values) }
             let peak = (0..<(layers.map(\.values.count).min() ?? 0))
-                .map { i in layers.reduce(0) { $0 + $1.values[$1.values.count - 1 - i] } }.max() ?? 0
+                .map { i in layers.reduce(0) { $0 + $1.values[$1.values.count - 1 - i] } }.finiteMax ?? 0
             StackedHistoryChart(layers: layers, top: max(1, peak * 1.05),
                                 label: { "\(Int(($0 * 100).rounded()))%" })
             SectionTitle(text: tr("Memory usage history", "Histórico de uso da memória"))
@@ -490,8 +491,8 @@ private struct NetworkDetail: View {
                     InfoRow(label: "↑ Upload", value: rate(s.networkIO?.write ?? 0), valueColor: red)
                 }
                 GridRow {
-                    InfoRow(label: tr("Peak ↓", "Pico ↓"), value: rate(s.networkInHistory.max() ?? 0))
-                    InfoRow(label: tr("Peak ↑", "Pico ↑"), value: rate(s.networkOutHistory.max() ?? 0))
+                    InfoRow(label: tr("Peak ↓", "Pico ↓"), value: rate(s.networkInHistory.finiteMax ?? 0))
+                    InfoRow(label: tr("Peak ↑", "Pico ↑"), value: rate(s.networkOutHistory.finiteMax ?? 0))
                 }
                 GridRow {
                     InfoRow(label: "Interface", value: s.networkInterface ?? "–")

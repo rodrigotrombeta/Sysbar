@@ -404,7 +404,18 @@ final class SystemStatsSampler {
     /// Seconds covered by one point.
     static var bucketSeconds: TimeInterval { Settings.chartWindow / Double(historyLimit) }
 
+    /// The last 24 h of every series, to refill the charts when the span changes.
+    private let archive: HistoryArchive
+
+    /// `persistent`: keep the 24 h chart history on disk across restarts.
+    init(persistent: Bool = false) {
+        archive = HistoryArchive(persistent: persistent)
+    }
+
+    func saveHistory() { archive.save() }
+
     private func appendHistory(_ buffer: inout [Double], key: String, _ value: Double) {
+        archive.record(key, value)
         let acc = pending[key] ?? (0, 0)
         guard commitThisTick else {
             pending[key] = (acc.sum + value, acc.count + 1)
@@ -416,18 +427,28 @@ final class SystemStatsSampler {
         if buffer.count > limit { buffer.removeFirst(buffer.count - limit) }
     }
 
-    /// The chart window changed: start the histories over.
+    /// The chart window changed: rebuild every chart from the 24 h archive
+    /// at the new span (as much of it as has been recorded).
     private func resetHistories() {
         pending = [:]
         lastCommit = -.infinity
-        coreHistory = []; gpuDeviceHistory = []
-        for keyPath in [\SystemStatsSampler.gpuRendererHistory, \.gpuTilerHistory, \.eHistory, \.pHistory,
-                        \.gpuHistory, \.cpuHistory, \.memoryHistory, \.memoryAppHistory, \.memoryWiredHistory,
-                        \.memoryCompressedHistory, \.memorySwapHistory, \.gpuMemoryHistory, \.diskReadHistory,
-                        \.diskWriteHistory, \.memoryInHistory, \.memoryOutHistory, \.networkInHistory,
-                        \.networkOutHistory] {
-            self[keyPath: keyPath] = []
-        }
+        let window = Settings.chartWindow
+        let points = Self.historyLimit
+        func seed(_ key: String) -> [Double] { archive.history(key, window: window, points: points) }
+        coreHistory = (0..<archive.indexedCount("core")).map { seed("core\($0)") }
+        gpuDeviceHistory = (0..<archive.indexedCount("gpuDevice")).map { seed("gpuDevice\($0)") }
+        let series: [(ReferenceWritableKeyPath<SystemStatsSampler, [Double]>, String)] = [
+            (\.gpuRendererHistory, "gpuRendererHistory"), (\.gpuTilerHistory, "gpuTilerHistory"),
+            (\.eHistory, "eHistory"), (\.pHistory, "pHistory"), (\.gpuHistory, "gpuHistory"),
+            (\.cpuHistory, "cpuHistory"), (\.memoryHistory, "memoryHistory"),
+            (\.memoryAppHistory, "memoryAppHistory"), (\.memoryWiredHistory, "memoryWiredHistory"),
+            (\.memoryCompressedHistory, "memoryCompressedHistory"), (\.memorySwapHistory, "memorySwapHistory"),
+            (\.gpuMemoryHistory, "gpuMemoryHistory"), (\.diskReadHistory, "diskReadHistory"),
+            (\.diskWriteHistory, "diskWriteHistory"), (\.memoryInHistory, "memoryInHistory"),
+            (\.memoryOutHistory, "memoryOutHistory"), (\.networkInHistory, "networkInHistory"),
+            (\.networkOutHistory, "networkOutHistory"),
+        ]
+        for (keyPath, key) in series { self[keyPath: keyPath] = seed(key) }
     }
 
     // MARK: - CPU

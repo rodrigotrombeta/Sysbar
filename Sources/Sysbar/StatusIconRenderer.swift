@@ -385,18 +385,24 @@ enum StatusIconRenderer {
         // Right-aligned, so new samples enter from the right and scroll left.
         let startX = plot.maxX - step * CGFloat(points.count - 1)
         let line = NSBezierPath()
-        for (i, v) in points.enumerated() {
-            let p = NSPoint(x: startX + step * CGFloat(i),
-                            y: plot.minY + plot.height * CGFloat(min(1, max(0, v))))
-            i == 0 ? line.move(to: p) : line.line(to: p)
+        let area = NSBezierPath()
+        // One piece per run of samples; gaps (NaN) stay empty.
+        for run in points.finiteRuns {
+            let piece = NSBezierPath()
+            for i in run {
+                let p = NSPoint(x: startX + step * CGFloat(i),
+                                y: plot.minY + plot.height * CGFloat(min(1, max(0, points[i]))))
+                i == run.lowerBound ? piece.move(to: p) : piece.line(to: p)
+            }
+            line.append(piece)
+            piece.line(to: NSPoint(x: startX + step * CGFloat(run.upperBound - 1), y: plot.minY))
+            piece.line(to: NSPoint(x: startX + step * CGFloat(run.lowerBound), y: plot.minY))
+            piece.close()
+            area.append(piece)
         }
 
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: plot).addClip()
-        let area = line.copy() as! NSBezierPath
-        area.line(to: NSPoint(x: plot.maxX, y: plot.minY))
-        area.line(to: NSPoint(x: startX, y: plot.minY))
-        area.close()
         color.withAlphaComponent(0.35).setFill()
         area.fill()
         color.setStroke()
@@ -519,7 +525,7 @@ enum StatusIconRenderer {
 
         let r = Array(read.suffix(chartPoints))
         let w = Array(write.suffix(chartPoints))
-        let peak = max(ioFloor, r.max() ?? 0, w.max() ?? 0)
+        let peak = max(ioFloor, r.finiteMax ?? 0, w.finiteMax ?? 0)
         let half = plot.height / 2
         let step = plot.width / CGFloat(chartPoints - 1)
 
@@ -527,15 +533,20 @@ enum StatusIconRenderer {
             guard values.count > 1 else { return }
             let startX = plot.maxX - step * CGFloat(values.count - 1)
             let line = NSBezierPath()
-            for (i, v) in values.enumerated() {
-                let h = half * CGFloat(min(1, v / peak))
-                let p = NSPoint(x: startX + step * CGFloat(i), y: up ? mid + h : mid - h)
-                i == 0 ? line.move(to: p) : line.line(to: p)
+            let area = NSBezierPath()
+            for run in values.finiteRuns {
+                let piece = NSBezierPath()
+                for i in run {
+                    let h = half * CGFloat(min(1, values[i] / peak))
+                    let p = NSPoint(x: startX + step * CGFloat(i), y: up ? mid + h : mid - h)
+                    i == run.lowerBound ? piece.move(to: p) : piece.line(to: p)
+                }
+                line.append(piece)
+                piece.line(to: NSPoint(x: startX + step * CGFloat(run.upperBound - 1), y: mid))
+                piece.line(to: NSPoint(x: startX + step * CGFloat(run.lowerBound), y: mid))
+                piece.close()
+                area.append(piece)
             }
-            let area = line.copy() as! NSBezierPath
-            area.line(to: NSPoint(x: plot.maxX, y: mid))
-            area.line(to: NSPoint(x: startX, y: mid))
-            area.close()
             color.withAlphaComponent(0.35).setFill()
             area.fill()
             color.setStroke()

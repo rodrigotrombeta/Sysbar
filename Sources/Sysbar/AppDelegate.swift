@@ -9,7 +9,7 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let sampler = SystemStatsSampler()
+    private let sampler = SystemStatsSampler(persistent: true)
     private let processSampler = ProcessSampler()
     private let processHelper = ProcessHelperClient()
     private let claudeFetcher = ClaudeUsageFetcher()
@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private var settingsGlobalMonitor: Any?
     private var settingsLocalMonitor: Any?
+
+    func applicationWillTerminate(_ notification: Notification) {
+        sampler.saveHistory()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

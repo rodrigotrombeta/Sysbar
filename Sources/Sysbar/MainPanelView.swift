@@ -441,8 +441,8 @@ private struct SettingsView: View {
                 }
                 .labelsHidden()
                 .frame(width: 130)
-                .help(tr("Time span of every history chart (panel, details and menu bar). Kept in memory while Sysbar runs; longer spans average several samples per point.",
-                         "Período de todos os gráficos de histórico (painel, detalhes e barra de menus). Fica na memória enquanto o Sysbar roda; períodos longos fazem a média de várias amostras por ponto."))
+                .help(tr("Time span of every history chart (panel, details and menu bar). Sysbar always keeps the last 24 h in memory, so a longer span shows the data already recorded; longer spans average several samples per point.",
+                         "Período de todos os gráficos de histórico (painel, detalhes e barra de menus). O Sysbar sempre guarda as últimas 24 h na memória, então um período maior já mostra os dados registrados; períodos longos fazem a média de várias amostras por ponto."))
             }
             LabeledContent(tr("Language", "Idioma")) {
                 Picker("", selection: model.language) {

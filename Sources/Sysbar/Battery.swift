@@ -280,7 +280,8 @@ struct BatteryDetail: View {
                          + (history.count > 1 ? " · " + StatsFormat.duration(Double(history.count - 1) * BatteryHistory.step) : ""))
             // A single point is drawn as a flat line until the next one.
             HistoryChart(series: [.init(values: history.count == 1 ? history + history : history, color: green)],
-                         height: 64)
+                         height: 64, capacity: BatteryHistory.points,
+                         span: Double(BatteryHistory.points) * BatteryHistory.step)
 
             SectionTitle(text: tr("Details", "Detalhes"))
             InfoRow(label: tr("Source", "Fonte"),

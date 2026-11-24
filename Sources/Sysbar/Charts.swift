@@ -73,6 +73,23 @@ extension View {
     func graphicsLayer() -> some View { modifier(GraphicsLayer()) }
 }
 
+extension Array where Element == Double {
+    /// Largest / smallest value, ignoring gaps (NaN).
+    var finiteMax: Double? { lazy.filter(\.isFinite).max() }
+    var finiteMin: Double? { lazy.filter(\.isFinite).min() }
+
+    /// Index ranges of consecutive real values (gaps are NaN).
+    var finiteRuns: [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for (i, v) in enumerated() {
+            if v.isFinite { if start == nil { start = i } } else if let s = start { runs.append(s..<i); start = nil }
+        }
+        if let s = start { runs.append(s..<count) }
+        return runs
+    }
+}
+
 /// A history chart with a labelled grid (0 / 25 / 50 / 75 / 100 % of max),
 /// newest sample on the right — like Activity Monitor / iStat Menus.
 struct HistoryChart: View {
@@ -89,10 +106,12 @@ struct HistoryChart: View {
     var label: (Double) -> String = { "\(Int(($0 * 100).rounded()))%" }
     var height: CGFloat = 86
     var capacity = SystemStatsSampler.historyLimit
+    /// Seconds covered by the full width (`capacity` points), for the time axis.
+    var span: TimeInterval = Settings.chartWindow
 
     private var top: Double {
         if let maxValue { return maxValue }
-        let peak = series.flatMap(\.values).max() ?? 0
+        let peak = series.flatMap(\.values).finiteMax ?? 0
         return max(minimumMax, peak * 1.1)
     }
 
@@ -127,10 +146,51 @@ struct HistoryChart: View {
             .graphicsLayer()
         }
         .frame(height: height)
-        .padding(.vertical, 6)
+        .padding(.top, 6)
         .padding(.trailing, 8)
         .padding(.leading, 2)
+        .withTimeAxis(span)
+    }
+}
+
+/// Clock times under a history chart: its start, three quarter marks and
+/// now. Seconds are shown for spans under 10 minutes.
+extension View {
+    /// The chart above its time axis, on the rounded chart background.
+    func withTimeAxis(_ span: TimeInterval) -> some View {
+        VStack(spacing: 3) {
+            self
+            TimeAxis(span: span).padding(.leading, 52).padding(.trailing, 8).padding(.bottom, 4)
+        }
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+    }
+}
+
+/// Fixed-height row of plain texts (no GeometryReader): it can't change the
+/// panel's size as the times tick, so it never re-triggers panel layout.
+struct TimeAxis: View {
+    let span: TimeInterval
+
+    private static let short: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
+    }()
+    private static let long: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f
+    }()
+
+    var body: some View {
+        let now = Date()
+        let format = span < 600 ? Self.long : Self.short
+        HStack(spacing: 0) {
+            ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { f in
+                if f > 0 { Spacer(minLength: 2) }
+                Text(format.string(from: now.addingTimeInterval(-span * (1 - f))))
+            }
+        }
+        .font(.system(size: 8.5).monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .frame(height: 10)
     }
 }
 
@@ -148,6 +208,7 @@ struct StackedHistoryChart: View {
     var label: (Double) -> String
     var height: CGFloat = 86
     var capacity = SystemStatsSampler.historyLimit
+    var span: TimeInterval = Settings.chartWindow
 
     var body: some View {
         let sums = cumulative
@@ -176,10 +237,10 @@ struct StackedHistoryChart: View {
             .graphicsLayer()
         }
         .frame(height: height)
-        .padding(.vertical, 6)
+        .padding(.top, 6)
         .padding(.trailing, 8)
         .padding(.leading, 2)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+        .withTimeAxis(span)
     }
 
     /// Running totals per layer, aligned on the newest sample.
@@ -211,10 +272,14 @@ private struct BandPath: Shape {
         func point(_ i: Int, _ v: Double) -> CGPoint {
             CGPoint(x: startX + step * CGFloat(i), y: rect.maxY - rect.height * CGFloat(min(1, max(0, v / top))))
         }
-        p.move(to: point(0, up[0]))
-        for i in 1..<up.count { p.addLine(to: point(i, up[i])) }
-        for i in stride(from: low.count - 1, through: 0, by: -1) { p.addLine(to: point(i, low[i])) }
-        p.closeSubpath()
+        // Gaps (NaN) in either edge split the band.
+        let both = up.indices.map { i in up[i].isFinite && (i < low.count ? low[i].isFinite : false) ? up[i] : .nan }
+        for run in both.finiteRuns {
+            p.move(to: point(run.lowerBound, up[run.lowerBound]))
+            for i in run.dropFirst() { p.addLine(to: point(i, up[i])) }
+            for i in run.reversed() { p.addLine(to: point(i, low[i])) }
+            p.closeSubpath()
+        }
         return p
     }
 }
@@ -292,15 +357,18 @@ struct ChartPath: Shape {
         guard points.count > 1, top > 0 else { return p }
         let step = rect.width / CGFloat(max(1, capacity - 1))
         let startX = rect.maxX - step * CGFloat(points.count - 1)
-        for (i, v) in points.enumerated() {
-            let y = rect.maxY - rect.height * CGFloat(min(1, max(0, v / top)))
-            let pt = CGPoint(x: startX + step * CGFloat(i), y: y)
-            i == 0 ? p.move(to: pt) : p.addLine(to: pt)
-        }
-        if closed {
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: startX, y: rect.maxY))
-            p.closeSubpath()
+        func x(_ i: Int) -> CGFloat { startX + step * CGFloat(i) }
+        // One piece per run of samples; gaps (NaN) stay empty.
+        for run in points.finiteRuns {
+            for i in run {
+                let pt = CGPoint(x: x(i), y: rect.maxY - rect.height * CGFloat(min(1, max(0, points[i] / top))))
+                i == run.lowerBound ? p.move(to: pt) : p.addLine(to: pt)
+            }
+            if closed {
+                p.addLine(to: CGPoint(x: x(run.upperBound - 1), y: rect.maxY))
+                p.addLine(to: CGPoint(x: x(run.lowerBound), y: rect.maxY))
+                p.closeSubpath()
+            }
         }
         return p
     }

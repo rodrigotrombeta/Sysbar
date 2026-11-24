@@ -69,24 +69,27 @@ private struct SparklineShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         guard values.count > 1, rect.width > 0, rect.height > 0 else { return path }
-        let low = domain?.lowerBound ?? (values.min() ?? 0)
-        let high = domain?.upperBound ?? (values.max() ?? 0)
+        let low = domain?.lowerBound ?? (values.finiteMin ?? 0)
+        let high = domain?.upperBound ?? (values.finiteMax ?? 0)
         let span = domain.map { $0.upperBound - $0.lowerBound } ?? (high - low) * 1.05
         let isFlat = span <= .ulpOfOne
         let stepX = rect.width / CGFloat(values.count - 1)
         // Inset by half the stroke so a series at 0% / 100% isn't clipped.
         let top: CGFloat = 0.6
         let plotHeight = rect.height - 1.2
-        for (index, value) in values.enumerated() {
-            let normalized = isFlat ? 0.5 : min(1, max(0, (value - low) / span))
-            let point = CGPoint(x: CGFloat(index) * stepX,
-                                y: top + plotHeight * (1 - CGFloat(normalized)))
-            index == 0 ? path.move(to: point) : path.addLine(to: point)
-        }
-        if closed {
-            path.addLine(to: CGPoint(x: rect.width, y: rect.height))
-            path.addLine(to: CGPoint(x: 0, y: rect.height))
-            path.closeSubpath()
+        // One piece per run of samples; gaps (NaN) stay empty.
+        for run in values.finiteRuns {
+            for index in run {
+                let normalized = isFlat ? 0.5 : min(1, max(0, (values[index] - low) / span))
+                let point = CGPoint(x: CGFloat(index) * stepX,
+                                    y: top + plotHeight * (1 - CGFloat(normalized)))
+                index == run.lowerBound ? path.move(to: point) : path.addLine(to: point)
+            }
+            if closed {
+                path.addLine(to: CGPoint(x: CGFloat(run.upperBound - 1) * stepX, y: rect.height))
+                path.addLine(to: CGPoint(x: CGFloat(run.lowerBound) * stepX, y: rect.height))
+                path.closeSubpath()
+            }
         }
         return path
     }
