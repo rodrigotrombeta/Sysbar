@@ -227,14 +227,17 @@ private struct PanelHeader: View {
     var page: Int?
 
     var body: some View {
-        HStack(spacing: 12) {
+        // Title, < ■ >, then the buttons, tight enough for every control
+        // to fit the 270 pt panel.
+        HStack(spacing: 0) {
             Text("Sysbar").font(.system(size: 13, weight: .bold))
                 .fixedSize()
                 .layoutPriority(1)
             if showsMute && Settings.pinSide != nil {
-                SideArrows(model: model, page: page)
+                SideArrows(model: model, page: page).padding(.leading, 4)
             }
-            Spacer(minLength: 4)
+            Spacer(minLength: 6)
+            HStack(spacing: showsMute ? 8 : 12) {
             PinButton(model: model, page: page, isEdge: showsMute)
 
             if showsMute {
@@ -262,10 +265,11 @@ private struct PanelHeader: View {
             .help(tr("Settings", "Configurações"))
             Button(action: model.quit) { Image(systemName: "power") }
                 .help(tr("Quit Sysbar", "Sair do Sysbar"))
+            }
         }
         .buttonStyle(.borderless)
         .font(.system(size: 13))
-        .padding(.horizontal, 14)
+        .padding(.horizontal, showsMute ? 10 : 14)
         .padding(.vertical, 9)
     }
 }
@@ -278,9 +282,25 @@ private struct SideArrows: View {
 
     var body: some View {
         let current = Settings.side(forPage: page)
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             arrow("chevron.left", .left, current: current,
                   help: tr("Send to the left edge", "Enviar para a lateral esquerda"))
+            // Float ↔ Full. Several pinned columns are always full height.
+            let columns = Settings.pinnedPages.count > 1
+            Button {
+                Settings.pinFull.toggle()
+                Settings.iconOpens = Settings.pinFull ? "full" : "float"
+                model.pagesChanged()
+            } label: {
+                Image(systemName: Settings.edgeFull ? "square.fill" : "square")
+                    .frame(width: 14, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .disabled(columns)
+            .help(columns ? tr("With all pages pinned, every column is full height.",
+                               "Com todas as páginas fixadas, cada coluna tem altura total.")
+                          : Settings.pinFull ? tr("Full height: switch to Float", "Altura toda: mudar para Flutuante")
+                                             : tr("Float: switch to Full height", "Flutuante: mudar para Altura toda"))
             arrow("chevron.right", .right, current: current,
                   help: tr("Send to the right edge", "Enviar para a lateral direita"))
         }
@@ -290,7 +310,7 @@ private struct SideArrows: View {
     private func arrow(_ symbol: String, _ side: PinSide, current: PinSide, help: String) -> some View {
         Button { model.sendPage(page, to: side) } label: {
             Image(systemName: symbol)
-                .frame(width: 16, height: 16)
+                .frame(width: 14, height: 16)
                 .contentShape(Rectangle())
         }
         .disabled(current == side)
