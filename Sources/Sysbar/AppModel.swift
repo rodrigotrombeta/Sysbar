@@ -148,6 +148,10 @@ final class AppModel {
         return b.iconSegments
     }
 
+    var textColor: Binding<Color?> {
+        Binding(get: { Settings.textColor }, set: { Settings.textColor = $0; self.bump() })
+    }
+
     var autoCheckUpdates: Binding<Bool> {
         Binding(get: { Settings.autoCheckUpdates }, set: { Settings.autoCheckUpdates = $0 })
     }

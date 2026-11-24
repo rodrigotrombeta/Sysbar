@@ -2,6 +2,7 @@
 
 import AppKit
 import Observation
+import SwiftUI
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable, Identifiable {
@@ -218,6 +219,11 @@ final class SettingsStore {
     var opacity: OpacitySet {
         didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
+    /// Text color of the panels as sRGB components; nil = system (white /
+    /// black with the usual grays for secondary text).
+    var textColor: [Double]? {
+        didSet { defaults.set(textColor, forKey: "textColor") }
+    }
     /// Detail panels set to "Separate": their own opacity instead of the
     /// global one (keys are section kinds).
     var separateOpacity: Set<String> {
@@ -278,6 +284,7 @@ final class SettingsStore {
         opacity = d.data(forKey: "opacity").flatMap { try? JSONDecoder().decode(OpacitySet.self, from: $0) }
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
         separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
+        textColor = (d.array(forKey: "textColor") as? [Double]).flatMap { $0.count == 3 ? $0 : nil }
         panelOpacities = d.data(forKey: "panelOpacitySets")
             .flatMap { try? JSONDecoder().decode([String: OpacitySet].self, from: $0) } ?? [:]
         diskDetailedInIcon = d.bool(forKey: "diskDetailedInIcon")
@@ -389,6 +396,17 @@ enum Settings {
     static var opacity: OpacitySet {
         get { store.opacity }
         set { store.opacity = newValue }
+    }
+
+    /// Panel text color; nil = system.
+    static var textColor: Color? {
+        get { store.textColor.map { Color(.sRGB, red: $0[0], green: $0[1], blue: $0[2]) } }
+        set {
+            store.textColor = newValue.flatMap { color in
+                guard let c = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+                return [Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent)]
+            }
+        }
     }
 
     /// Opacity a panel uses: its own if set to Separate, else the global one

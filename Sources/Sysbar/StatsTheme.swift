@@ -27,9 +27,12 @@ struct StatsTheme {
         .system(size: size, weight: weight)
     }
 
-    var text: Color { Color(nsColor: .labelColor) }
-    var textSecondary: Color { Color(nsColor: .secondaryLabelColor) }
-    var textTertiary: Color { Color(nsColor: .tertiaryLabelColor) }
+    // Hierarchical: they follow the panel's text color and text opacity.
+    var text: HierarchicalShapeStyle { .primary }
+    var textSecondary: HierarchicalShapeStyle { .secondary }
+    var textTertiary: HierarchicalShapeStyle { .tertiary }
+    /// Bar tracks and similar backdrops (graphics, not text).
+    var track: Color { Color(nsColor: .tertiaryLabelColor) }
     var accent: Color { Color(nsColor: .systemBlue) }
     var rowSep: Color { Color(nsColor: .separatorColor) }
 }

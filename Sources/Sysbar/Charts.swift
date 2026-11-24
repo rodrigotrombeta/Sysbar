@@ -29,7 +29,7 @@ private struct PanelOpacityModifier: ViewModifier {
     func body(content: Content) -> some View {
         let o = Settings.opacity(for: key)
         content
-            .foregroundStyle(Color.primary.opacity(o.text))
+            .foregroundStyle((Settings.textColor ?? Color.primary).opacity(o.text))
             .environment(\.textOpacity, o.text)
             .environment(\.graphicsOpacity, o.graphics)
     }
@@ -43,7 +43,7 @@ private struct ControlsLayer: ViewModifier {
     func body(content: Content) -> some View {
         let o = max(opacity, minimum)
         content
-            .foregroundStyle(Color.primary.opacity(o))
+            .foregroundStyle((Settings.textColor ?? Color.primary).opacity(o))
             .environment(\.textOpacity, o)
             .environment(\.graphicsOpacity, minimum >= 1 ? 1 : o)
     }

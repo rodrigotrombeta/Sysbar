@@ -191,7 +191,7 @@ Dark) · ⚙︎ settings · quit.
 | Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, used / free (GB), I/O (page-ins/outs). Disk: pie, bar, percentage, used / free (GB), I/O (read/write). Network: I/O chart (download/upload) or speed text. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
-| General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Pinned panel (Float / Full height), Opacity (Background / Text / Graphics, or Sync opacity), Open at login (needs the app in `/Applications`). |
+| General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Pinned panel (Float / Full height), Text color (System, presets or a color wheel), Opacity (Background / Text / Graphics, or Sync opacity), Open at login (needs the app in `/Applications`). |
 | Updates | **Check for Updates…** asks GitHub for the latest release; if it is newer, Sysbar offers to download its DMG (install it like the first time). "Check for updates automatically" (on by default) does this once a day and stays silent when offline. The only network request Sysbar makes is to `api.github.com`. |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).

@@ -139,11 +139,11 @@ struct MemoryStatsPanel: View {
             HStack {
                 Text("\(StatsFormat.gib(memory.usedBytes)) / \(StatsFormat.wholeGiB(memory.totalBytes)) GB")
                     .font(StatsTheme.mono(StatsTheme.callout, weight: .semibold))
-                    .foregroundStyle(theme.text).textLayer()
+                    .foregroundStyle(theme.text)
                 Spacer()
                 Text(StatsFormat.percent(memory.usedFraction))
                     .font(StatsTheme.mono(StatsTheme.callout))
-                    .foregroundStyle(theme.textSecondary).textLayer()
+                    .foregroundStyle(theme.textSecondary)
             }
             SegmentedUsageBar(
                 total: memory.totalBytes,
@@ -162,7 +162,7 @@ struct MemoryStatsPanel: View {
             legendRow(color: compressedColor,
                       label: tr("Compressed", "Comprimida"),
                       bytes: memory.compressedBytes)
-            legendRow(color: theme.textTertiary.opacity(0.4),
+            legendRow(color: theme.track.opacity(0.4),
                       label: tr("Free", "Livre"),
                       bytes: memory.freeBytes)
             StatsValueRow(label: "Swap",
@@ -185,11 +185,11 @@ struct MemoryStatsPanel: View {
                 .graphicsLayer()
             Text(label)
                 .font(StatsTheme.text(11.5))
-                .foregroundStyle(theme.textSecondary).textLayer()
+                .foregroundStyle(theme.textSecondary)
             Spacer()
             Text(StatsFormat.gib(bytes) + " GB")
                 .font(StatsTheme.mono(11.5))
-                .foregroundStyle(theme.text).textLayer()
+                .foregroundStyle(theme.text)
         }
     }
 }
@@ -380,7 +380,7 @@ private struct StatsPanelCaption: View {
     var body: some View {
         Text(window.isEmpty ? text : "\(text) · \(window)")
             .font(StatsTheme.text(9.5))
-            .foregroundStyle(theme.textTertiary).textLayer()
+            .foregroundStyle(theme.textTertiary)
     }
 }
 
@@ -396,16 +396,16 @@ private struct UsageBarRow: View {
             HStack {
                 Text(label)
                     .font(StatsTheme.text(StatsTheme.callout, weight: .medium))
-                    .foregroundStyle(theme.text).textLayer()
+                    .foregroundStyle(theme.text)
                 Spacer()
                 Text(value)
                     .font(StatsTheme.mono(StatsTheme.callout))
-                    .foregroundStyle(theme.text).textLayer()
+                    .foregroundStyle(theme.text)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(theme.textTertiary.opacity(0.18))
+                        .fill(theme.track.opacity(0.18))
                     Capsule()
                         .fill(color)
                         .frame(width: max(
@@ -429,11 +429,11 @@ private struct StatsValueRow: View {
         HStack {
             Text(label)
                 .font(StatsTheme.text(StatsTheme.callout))
-                .foregroundStyle(theme.textSecondary).textLayer()
+                .foregroundStyle(theme.textSecondary)
             Spacer()
             Text(value)
                 .font(StatsTheme.mono(StatsTheme.callout))
-                .foregroundStyle(theme.text).textLayer()
+                .foregroundStyle(theme.text)
         }
     }
 }
@@ -458,7 +458,7 @@ private struct SegmentedUsageBar: View {
                 }
                 Spacer(minLength: 0)
             }
-            .background(theme.textTertiary.opacity(0.18))
+            .background(theme.track.opacity(0.18))
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .frame(height: 9)

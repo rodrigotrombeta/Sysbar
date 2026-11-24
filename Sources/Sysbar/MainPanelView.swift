@@ -372,6 +372,7 @@ private struct SettingsView: View {
                 .help(tr("Float: the pinned panel floats at its content height. Full height: it fills the whole side of the screen.",
                          "Flutuante: o painel fixado flutua com a altura do conteúdo. Altura toda: ocupa a lateral inteira da tela."))
             }
+            TextColorRow(color: model.textColor)
             Text(tr("Opacity", "Opacidade")).font(.system(size: 12))
             OpacityControls(value: model.opacity)
                 .padding(.leading, 8)
@@ -456,5 +457,116 @@ private struct PinButton: View {
         open = false
         Settings.pinFull = full
         model.pin(side)
+    }
+}
+
+/// Text color of the panels: System, a few presets or any color.
+private struct TextColorRow: View {
+    @Binding var color: Color?
+
+    private static let presets: [(String, Color)] = [
+        ("White", .white), ("Black", .black),
+        ("Green", Color(red: 0.35, green: 0.95, blue: 0.55)),
+        ("Amber", Color(red: 1, green: 0.75, blue: 0.25)),
+        ("Cyan", Color(red: 0.35, green: 0.85, blue: 1)),
+        ("Pink", Color(red: 1, green: 0.5, blue: 0.8)),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(tr("Text color", "Cor do texto")).font(.system(size: 12))
+            HStack(spacing: 6) {
+                Button(tr("System", "Sistema")) { color = nil }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .buttonStyle(.bordered)
+                    .tint(color == nil ? .accentColor : nil)
+                ForEach(Self.presets, id: \.0) { name, preset in
+                    Button { color = preset } label: {
+                        Circle().fill(preset)
+                            .overlay(Circle().stroke(Color.primary.opacity(0.35), lineWidth: 0.5))
+                            .overlay(Circle().stroke(Color.accentColor, lineWidth: 2).padding(-3)
+                                .opacity(matches(preset) ? 1 : 0))
+                            .frame(width: 14, height: 14)
+                    }
+                    .buttonStyle(.plain)
+                    .help(name)
+                }
+                Button { showWheel.toggle() } label: {
+                    Image(systemName: showWheel ? "chevron.up.circle" : "paintpalette")
+                }
+                .buttonStyle(.borderless)
+                .help(tr("Color wheel", "Roda de cores"))
+            }
+            if showWheel {
+                ColorWheel(color: Binding(get: { color ?? .white }, set: { color = $0 }))
+                    .padding(.top, 4)
+            }
+        }
+    }
+
+    @State private var showWheel = false
+
+    private func matches(_ preset: Color) -> Bool {
+        guard let color, let a = NSColor(color).usingColorSpace(.sRGB),
+              let b = NSColor(preset).usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) < 0.01 && abs(a.greenComponent - b.greenComponent) < 0.01
+            && abs(a.blueComponent - b.blueComponent) < 0.01
+    }
+}
+
+/// Hue/saturation wheel plus a brightness slider.
+private struct ColorWheel: View {
+    @Binding var color: Color
+    private let size: CGFloat = 110
+
+    var body: some View {
+        let hsb = components
+        HStack(alignment: .center, spacing: 14) {
+            ZStack {
+                Circle().fill(AngularGradient(
+                    colors: stride(from: 0.0, through: 1.0, by: 1.0 / 12).map {
+                        Color(hue: 1 - $0, saturation: 1, brightness: 1)
+                    },
+                    center: .center, angle: .degrees(0)))
+                Circle().fill(RadialGradient(colors: [.white, .white.opacity(0)],
+                                             center: .center, startRadius: 0, endRadius: size / 2))
+                Circle().fill(Color.black.opacity(1 - hsb.b))
+                Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5)
+                // Current color marker.
+                Circle().strokeBorder(Color.white, lineWidth: 2)
+                    .background(Circle().fill(color))
+                    .frame(width: 14, height: 14)
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+                    .offset(x: cos(-hsb.h * 2 * .pi) * hsb.s * size / 2,
+                            y: sin(-hsb.h * 2 * .pi) * hsb.s * size / 2)
+            }
+            .frame(width: size, height: size)
+            .contentShape(Circle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { pick($0.location, brightness: hsb.b) })
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("Brightness", "Brilho")).font(.system(size: 11))
+                Slider(value: Binding(get: { hsb.b },
+                                      set: { color = Color(hue: hsb.h, saturation: hsb.s, brightness: $0) }),
+                       in: 0.15...1)
+                    .controlSize(.small).frame(width: 110)
+            }
+        }
+    }
+
+    private var components: (h: Double, s: Double, b: Double) {
+        guard let c = NSColor(color).usingColorSpace(.sRGB) else { return (0, 0, 1) }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return (Double(h), Double(s), Double(b))
+    }
+
+    private func pick(_ point: CGPoint, brightness: Double) {
+        let dx = point.x - size / 2, dy = point.y - size / 2
+        let s = min(1, sqrt(dx * dx + dy * dy) / (size / 2))
+        var hue = -atan2(dy, dx) / (2 * .pi)
+        if hue < 0 { hue += 1 }
+        color = Color(hue: hue, saturation: s, brightness: max(0.15, brightness))
     }
 }
