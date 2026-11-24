@@ -147,7 +147,7 @@ reconnected. When it's pinned, clicking the menu bar icon unpins and closes it.
 only) · Activity Monitor (menu bar panel only) · appearance (System → Light →
 Dark) · ⚙︎ settings · quit.
 
-**Sections:** CPU · GPU · Memory · Disk · Network · Top memory (top 5 processes).
+**Sections:** CPU · GPU · Memory · Disk · Network · Top memory (top 5 processes) · Claude (Claude Code limits) · Clock (calendar and time zones). Choose which ones appear in Settings › Dashboard.
 
 - **Hover** a section to open its detailed metrics beside the panel.
 - **Click** a section to keep its details open (📌). Several can stay pinned at
@@ -174,6 +174,8 @@ Dark) · ⚙︎ settings · quit.
 | **Memory** | Used / total, memory pressure, App / Wired / Compressed / Swap, a stacked chart of App / Wired / Compressed / Swap as % of RAM (smallest at the bottom), usage history, page-in/out history, top 10 processes by memory with their share of RAM. |
 | **Disk** | Startup volume usage as a **Pie** or **Progress** bar, used / free percentages, read/write speed, totals since boot, read/write history. *Detailed* splits the pie into macOS, apps, swap, files & other, purgeable and free (measured on demand, ~10 s); optionally the menu bar disk pie/bar shows the same categories for an hour after each measurement. |
 | **Network** | Download / upload speed and peaks, interface, IP address, history. |
+| **Claude** *(beta)* | Claude Code's **5-hour** and **weekly** limits: % used, when each resets, and a chart of usage vs. time in each window with a dashed **projection at the current pace** and an even-pace diagonal, so you can see whether you'll hit the limit before the reset ("At this pace: limit at 14:06, 42 min before reset"). Turn on *Fetch limits from Anthropic* in Settings: Sysbar reads Claude Code's login from the Keychain (macOS asks once) and asks `api.anthropic.com` every 5 minutes, like Claude Code's `/usage` (no tokens used). That address is undocumented and may change. Alternatively it can record the limits Claude Code passes to its status line when used in a terminal. |
+| **Clock** | Month calendar (today in red) and one clock per time zone: analog face, flag, date and time, GMT offset, weekday. Add as many time zones as you like; the first two can go to the menu bar. |
 | **Top processes** | Top 15 by memory (with % of RAM) and top 10 by CPU. **Admin rights…** asks for your administrator password to also list other users' processes (e.g. WindowServer); asked again after Sysbar restarts. |
 
 > macOS's public APIs report GPU utilization per GPU *device* (one on Apple
@@ -187,12 +189,13 @@ Dark) · ⚙︎ settings · quit.
 
 | Setting | Options |
 |---|---|
-| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network: show it or not, its **style** and its **color**. Drag the ≡ handle to reorder them: top to bottom in the list = left to right in the menu bar. |
-| Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, used / free (GB), I/O (page-ins/outs). Disk: pie, bar, percentage, used / free (GB), I/O (read/write). Network: I/O chart (download/upload) or speed text. |
+| **Menu bar icon** | For each metric — CPU (total), E-cores, P-cores, GPU, GPU memory, Memory, Disk, Network, Claude Code limits, Clock: show it or not, its **style** and its **color**. Drag the ≡ handle to reorder them: top to bottom in the list = left to right in the menu bar. |
+| Styles | CPU/GPU metrics: line chart, bar, pie, percentage, chart + %. Memory: pie, bar, line, percentage, used / free (GB), I/O (page-ins/outs). Disk: pie, bar, percentage, used / free (GB), I/O (read/write). Network: I/O chart (download/upload) or speed text. Claude Code limits: `5h 42%` over `7d 18%` (orange/red when the pace leads to the limit). Clock: date and time of the first two time zones, with an adjustable font size. |
 | Colors | **Colored**, **Monochrome** (white/black, follows the menu bar) or **By utilization** (green → orange → red). Memory pies/bars split into App (green) / Wired (orange) / Compressed (magenta). |
+| Dashboard | Which sections appear in the Sysbar panel, and the Clock time zones (add, reorder, remove; menu bar font size). |
 | Show label | The small stacked label (CPU, GPU, RAM, SSD, NET). |
 | General | Refresh interval (0.5–5 s), Language (English / Português), Appearance (System / Light / Dark), Pinned panel (Float / Full height), Text color (System, presets or a color wheel), Opacity (Background / Text / Graphics, or Sync opacity), Open at login (needs the app in `/Applications`). |
-| Updates | **Check for Updates…** asks GitHub for the latest release; if it is newer, Sysbar offers to download its DMG (install it like the first time). "Check for updates automatically" (on by default) does this once a day and stays silent when offline. The only network request Sysbar makes is to `api.github.com`. |
+| Updates | **Check for Updates…** asks GitHub for the latest release; if it is newer, Sysbar offers to download its DMG (install it like the first time). "Check for updates automatically" (on by default) does this once a day and stays silent when offline. Sysbar only talks to `api.github.com` (updates) and, if you turn on *Fetch limits from Anthropic*, `api.anthropic.com` (Claude Code limits). |
 
 Settings persist in `UserDefaults` (`local.sysbar.app`).
 

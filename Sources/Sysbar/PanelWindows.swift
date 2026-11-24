@@ -68,6 +68,9 @@ final class HostedPanel {
     /// The panel's background, a sibling *behind* the content, so fading
     /// it leaves the text and charts as they are.
     private let background = NSVisualEffectView()
+    /// Solid window color over the blur: at 100 % background opacity the
+    /// panel is fully opaque, whatever macOS's transparency setting.
+    private let solid = SolidBackgroundView()
 
     init<V: View>(_ view: V) {
         let host = FirstMouseHostingView(rootView: view)
@@ -95,7 +98,12 @@ final class HostedPanel {
         host.autoresizingMask = [.width, .height]
         container.wantsLayer = true
         container.layer?.cornerRadius = cornerRadius
+        solid.autoresizingMask = [.width, .height]
+        solid.wantsLayer = true
+        solid.layer?.cornerRadius = cornerRadius
+        solid.layer?.masksToBounds = true
         container.addSubview(effect)
+        container.addSubview(solid)
         container.addSubview(host)
         window.contentView = container
         applyAppearance()
@@ -110,6 +118,7 @@ final class HostedPanel {
             guard cornerRadius != oldValue else { return }
             container.layer?.cornerRadius = cornerRadius
             background.layer?.cornerRadius = cornerRadius
+            solid.layer?.cornerRadius = cornerRadius
             window.invalidateShadow()
         }
     }
@@ -127,6 +136,8 @@ final class HostedPanel {
         let backgroundOpacity = Settings.opacity(for: opacityKey).background
         window.alphaValue = 1
         background.alphaValue = backgroundOpacity
+        solid.alphaValue = backgroundOpacity
+        solid.needsDisplay = true
         let shadow = backgroundOpacity > 0.05
         if window.hasShadow != shadow { window.hasShadow = shadow }
         window.invalidateShadow()
@@ -136,6 +147,7 @@ final class HostedPanel {
         guard frame != window.frame else { return }
         window.setFrame(frame, display: true)
         background.frame = container.bounds
+        solid.frame = container.bounds
         host.frame = container.bounds
     }
 
@@ -417,4 +429,14 @@ extension NSScreen {
         let point = NSEvent.mouseLocation
         return screens.first { NSMouseInRect(point, $0.frame, false) }
     }
+}
+
+/// Fills with the window background color of the current appearance.
+final class SolidBackgroundView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
+    }
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

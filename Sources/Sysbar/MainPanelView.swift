@@ -59,8 +59,10 @@ struct MainPanelView: View {
     private var sections: some View {
         VStack(spacing: 0) {
             let order = Settings.sectionOrder
-            ForEach(Array(order.enumerated()), id: \.element) { index, kind in
-                if index > 0 { SectionRule() }
+            let visible = order.filter(Settings.isOnDashboard)
+            ForEach(visible, id: \.self) { kind in
+                let index = order.firstIndex(of: kind) ?? 0
+                if kind != visible.first { SectionRule() }
                 SectionHost(model: model, kind: kind, context: context,
                             index: index)
             }
@@ -96,6 +98,8 @@ private struct SectionHost: View {
             case .network: NetworkStatsPanel(snapshot: s, refreshInterval: Settings.interval)
             case .processes: TopProcessesPanel(rows: Array(model.processes.topMemory.prefix(5)),
                                                total: s.memory.totalBytes)
+            case .claude: ClaudeStatsPanel(model: model)
+            case .clock: ClockStatsPanel(model: model)
             }
         }
         .overlay(alignment: .top) { dragHandle }
@@ -336,6 +340,21 @@ private struct SettingsView: View {
                 .font(.system(size: 12))
 
             Divider()
+            Text(tr("Dashboard", "Dashboard")).font(.system(size: 12, weight: .bold))
+            Text(tr("Sections shown in the Sysbar panel (the menu bar icon is set above).",
+                    "Seções mostradas no painel do Sysbar (o ícone da barra de menus é definido acima)."))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                      alignment: .leading, spacing: 4) {
+                ForEach(SystemStatKind.allCases, id: \.self) { kind in
+                    Toggle(kind.detailTitle, isOn: model.onDashboard(kind))
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                }
+            }
+            ClockZonesEditor(model: model)
+
+            Divider()
             Text(tr("General", "Geral")).font(.system(size: 12, weight: .bold))
             LabeledContent(tr("Refresh", "Atualização")) {
                 Picker("", selection: model.interval) {
@@ -379,6 +398,8 @@ private struct SettingsView: View {
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)
 
+            Divider()
+            ClaudeConnectionRow(model: model)
             Divider()
             Text(tr("Updates", "Atualizações")).font(.system(size: 12, weight: .bold))
             Toggle(tr("Check for updates automatically", "Verificar atualizações automaticamente"),
@@ -568,5 +589,59 @@ private struct ColorWheel: View {
         var hue = -atan2(dy, dx) / (2 * .pi)
         if hue < 0 { hue += 1 }
         color = Color(hue: hue, saturation: s, brightness: max(0.15, brightness))
+    }
+}
+
+/// Where Sysbar gets Claude Code's limits: from Anthropic (automatic) and/or
+/// from Claude Code's terminal status line.
+private struct ClaudeConnectionRow: View {
+    let model: AppModel
+    @State private var connected = ClaudeUsageStore.isConnected()
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Claude Code").font(.system(size: 12, weight: .bold))
+            ClaudeBetaNote()
+            Toggle(tr("Fetch limits from Anthropic (every 5 min)", "Buscar limites na Anthropic (a cada 5 min)"),
+                   isOn: Binding(get: { Settings.claudeFetch },
+                                 set: { Settings.claudeFetch = $0; if $0 { model.fetchClaude() } }))
+                .toggleStyle(.checkbox)
+            Text(tr("Uses Claude Code's login (macOS asks once to let Sysbar read it from the Keychain) to ask api.anthropic.com for the 5-hour and weekly limits, like /usage does. The login is never stored by Sysbar.",
+                    "Usa o login do Claude Code (o macOS pede uma vez para o Sysbar lê-lo no Chaves) para consultar os limites de 5 horas e semanal em api.anthropic.com, como o /usage faz. O Sysbar não guarda o login."))
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if Settings.claudeFetch {
+                switch model.claudeFetchStatus {
+                case .fetching: Text(tr("Fetching…", "Buscando…")).font(.system(size: 10.5))
+                case .ok(let date):
+                    Text(tr("Last fetched \(date.formatted(date: .omitted, time: .shortened))",
+                            "Última busca \(date.formatted(date: .omitted, time: .shortened))"))
+                        .font(.system(size: 10.5)).foregroundStyle(.green)
+                case .failed(let message): Text(message).font(.system(size: 10.5)).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .idle: EmptyView()
+                }
+            }
+            HStack(spacing: 8) {
+                Text(tr("Terminal status line:", "Linha de status do terminal:")).font(.system(size: 10.5))
+                Button(connected ? tr("Disconnect", "Desconectar") : tr("Connect", "Conectar")) {
+                    do {
+                        try connected ? ClaudeUsageStore.disconnect() : ClaudeUsageStore.connect()
+                        error = nil
+                    } catch let e {
+                        error = e.localizedDescription
+                    }
+                    connected = ClaudeUsageStore.isConnected()
+                }
+                .controlSize(.small)
+                .help(tr("Also records the limits Claude Code passes to its status line when you use it in a terminal (changes statusLine in ~/.claude/settings.json; Disconnect restores it).",
+                         "Também registra os limites que o Claude Code passa à linha de status quando usado no terminal (muda o statusLine em ~/.claude/settings.json; Desconectar restaura)."))
+            }
+            if let error {
+                Text(error).font(.system(size: 10)).foregroundStyle(.red).lineLimit(2)
+            }
+        }
+        .onAppear { connected = ClaudeUsageStore.isConnected() }
     }
 }

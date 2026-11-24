@@ -29,6 +29,8 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case disk
     case network
     case processes
+    case claude
+    case clock
 
     var tag: String {
         switch self {
@@ -38,6 +40,8 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
         case .disk: return "DISK"
         case .network: return "NET"
         case .processes: return "TOP"
+        case .claude: return "CLAUDE"
+        case .clock: return "CLOCK"
         }
     }
 }
@@ -106,6 +110,8 @@ struct SystemStatsSnapshot: Sendable {
     var memorySwapHistory: [Double] = []
 
     var disk: Disk?
+    /// Claude Code 5-hour / weekly limits (set by the AppDelegate).
+    var claude: ClaudeUsage?
     /// Disk read/write throughput (all block-storage drivers).
     var diskIO: IORate?
     /// Memory page-ins (read) / page-outs (write).

@@ -5,6 +5,8 @@ MainActor.assumeIsolated {
     // `Sysbar --preview <dir>` writes PNGs of every icon style and the stats
     // panel, then exits (handy for checking the drawing without the menubar).
     let args = CommandLine.arguments
+    // Claude Code's statusline command (see ClaudeUsage.swift).
+    if args.contains("--claude-statusline") { ClaudeUsageStore.runStatusLine() }
     // Root helper for "show all processes" (see ProcessHelper.swift).
     if let flag = args.firstIndex(of: "--process-helper"), flag + 2 < args.count {
         ProcessHelper.run(request: args[flag + 1], data: args[flag + 2])
@@ -48,6 +50,7 @@ enum Preview {
             model.snapshot = sampler.sample()
         }
         model.processes = processes.sample()
+        model.snapshot.claude = ClaudeUsageStore.load()
         model.expandedCores = true
         model.expandedGPUs = true
         model.diskBreakdown = DiskBreakdown.measure()
@@ -144,7 +147,7 @@ enum Preview {
             let dark = appearance.name == .darkAqua
             (dark ? NSColor(white: 0.15, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
             NSRect(origin: .zero, size: size).fill()
-            let rect = NSRect(x: 8, y: 3, width: icon.size.width, height: icon.size.height)
+            let rect = NSRect(x: 8, y: (size.height - icon.size.height) / 2, width: icon.size.width, height: icon.size.height)
             if icon.isTemplate {
                 let tinted = NSImage(size: icon.size, flipped: false) { r in
                     icon.draw(in: r)

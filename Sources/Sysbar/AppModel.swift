@@ -53,6 +53,45 @@ final class AppModel {
         }
     }
 
+    /// Status of the fetch from Anthropic (Settings shows it).
+    var claudeFetchStatus: ClaudeUsageFetcher.Status = .idle
+    @ObservationIgnored var fetchClaude: () -> Void = {}
+
+    var clockFontSize: Binding<Double> {
+        Binding(get: { Settings.clockFontSize }, set: { Settings.clockFontSize = $0; self.bump() })
+    }
+
+    func onDashboard(_ kind: SystemStatKind) -> Binding<Bool> {
+        Binding(get: { Settings.isOnDashboard(kind) }, set: { Settings.setOnDashboard($0, kind) })
+    }
+
+    // Clocks: edits start from the shown list (this Mac's zone by default).
+    func addClock(_ id: String) {
+        var ids = WorldClock.zones.map(\.identifier)
+        guard !ids.contains(id) else { return }
+        ids.append(id)
+        Settings.clockZones = ids
+        bump()
+    }
+
+    func removeClock(_ id: String) {
+        Settings.clockZones = WorldClock.zones.map(\.identifier).filter { $0 != id }
+        bump()
+    }
+
+    func moveClock(_ id: String, by delta: Int) {
+        var ids = WorldClock.zones.map(\.identifier)
+        guard let i = ids.firstIndex(of: id), ids.indices.contains(i + delta) else { return }
+        ids.swapAt(i, i + delta)
+        Settings.clockZones = ids
+        bump()
+    }
+
+    func refreshClaude() {
+        if Settings.claudeFetch { fetchClaude() }
+        snapshot.claude = ClaudeUsageStore.reload()
+    }
+
     func moveSection(_ kind: SystemStatKind, to index: Int) {
         Settings.moveSection(kind, to: index)
     }

@@ -24,6 +24,8 @@ extension SystemStatKind {
         case .disk: return tr("Disk", "Disco")
         case .network: return tr("Network", "Rede")
         case .processes: return tr("Top processes", "Processos")
+        case .claude: return tr("Claude Code limits", "Limites do Claude Code")
+        case .clock: return tr("Clock", "Relógio")
         }
     }
 }
@@ -66,6 +68,8 @@ struct DetailContainer: View {
             case .disk: DiskDetail(model: model)
             case .network: NetworkDetail(model: model)
             case .processes: ProcessesDetail(model: model)
+            case .claude: ClaudeDetail(model: model)
+            case .clock: ClockStatsPanel(model: model, inDetail: true)
             }
         }
         .padding(14)
@@ -99,13 +103,13 @@ private struct CPUDetail: View {
                 }
                 GridRow {
                     MeterRow(label: "E-cores", value: pct(s.eCoreUsage),
-                             fraction: s.eCoreUsage ?? 0, color: orange)
+                             fraction: s.eCoreUsage ?? 0, color: green)
                     MeterRow(label: "P-cores", value: pct(s.pCoreUsage),
                              fraction: s.pCoreUsage ?? 0, color: blue)
                 }
             }
             SectionTitle(text: tr("CPU utilization history", "Histórico de uso da CPU"))
-            HistoryChart(series: [.init(values: s.eHistory, color: orange),
+            HistoryChart(series: [.init(values: s.eHistory, color: green),
                                   .init(values: s.pHistory, color: blue)])
             InfoRow(label: tr("Load avg", "Carga média"),
                     value: SystemStatsSampler.formatLoadAverages(s.loadAverages))
@@ -125,7 +129,7 @@ private struct CPUDetail: View {
                                 .font(.system(size: 11, weight: .medium).monospacedDigit())
                                 .frame(width: 26, alignment: .leading)
                             MiniChart(values: i < s.coreHistory.count ? s.coreHistory[i] : [],
-                                      color: isE ? orange : blue)
+                                      color: isE ? green : blue)
                                 .frame(height: 18)
                             Text(pct(s.coreUsage[i]))
                                 .font(.system(size: 11).monospacedDigit())

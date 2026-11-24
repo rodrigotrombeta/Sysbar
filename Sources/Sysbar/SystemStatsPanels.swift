@@ -21,7 +21,7 @@ struct CPUStatsPanel: View {
 
     private let theme = StatsTheme()
 
-    private var eColor: Color { Color(nsColor: .systemOrange) }
+    private var eColor: Color { Color(nsColor: .systemGreen) }
     private var pColor: Color { Color(nsColor: .systemBlue) }
 
     var body: some View {
@@ -40,7 +40,7 @@ struct CPUStatsPanel: View {
                 color: pColor
             )
             StatsPanelCaption(
-                text: tr("E (amber) / P (blue) usage", "Uso E (âmbar) / P (azul)"),
+                text: tr("E (green) / P (blue) usage", "Uso E (verde) / P (azul)"),
                 window: StatsFormat.window(sampleCount: snapshot.eHistory.count,
                                            interval: refreshInterval)
             )
@@ -333,7 +333,7 @@ struct SystemStatsPanelStack: View {
             DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         case .network:
             NetworkStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
-        case .processes:
+        case .processes, .claude, .clock:
             EmptyView()
         }
     }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sampler = SystemStatsSampler()
     private let processSampler = ProcessSampler()
     private let processHelper = ProcessHelperClient()
+    private let claudeFetcher = ClaudeUsageFetcher()
     private let model = AppModel()
     private let updater = UpdateChecker()
     private var statusItem: NSStatusItem!
@@ -67,6 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tick()
         restartTimer()
         updater.startAutomaticChecks()
+        ClaudeUsageStore.refreshConnection()
+        claudeFetcher.onChange = { [weak self] status in
+            guard let self else { return }
+            self.model.claudeFetchStatus = status
+            if case .ok = status { self.model.snapshot.claude = ClaudeUsageStore.reload() }
+        }
+        model.fetchClaude = { [weak self] in self?.claudeFetcher.fetch() }
         if Settings.pinSide != nil { edgePanel.show() }
 
         NotificationCenter.default.addObserver(
@@ -94,7 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
-        let snapshot = sampler.sample()
+        var snapshot = sampler.sample()
+        snapshot.claude = ClaudeUsageStore.load()
+        claudeFetcher.tick()
         model.snapshot = snapshot
         // Process scanning only while something shows processes.
         if panelsVisible {

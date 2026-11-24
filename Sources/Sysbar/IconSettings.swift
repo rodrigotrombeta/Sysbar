@@ -6,7 +6,7 @@ import SwiftUI
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable, Identifiable {
-    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network
+    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network, claude, clock
 
     var id: String { rawValue }
 
@@ -20,6 +20,8 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .memory: return tr("Memory", "Memória")
         case .disk: return tr("Disk", "Disco")
         case .network: return tr("Network", "Rede")
+        case .claude: return tr("Claude Code limits", "Limites do Claude Code")
+        case .clock: return tr("Clock (first 2 time zones)", "Relógio (2 primeiros fusos)")
         }
     }
 
@@ -34,19 +36,23 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .memory: return "RAM"
         case .disk: return "SSD"
         case .network: return "NET"
+        case .claude: return "CC"
+        case .clock: return ""
         }
     }
 
     var color: NSColor {
         switch self {
         case .cpu: return .systemBlue
-        case .eCores: return .systemOrange
+        case .eCores: return .systemGreen
         case .pCores: return .systemBlue
         case .gpu: return .systemGreen
         case .gpuMemory: return .systemCyan
         case .memory: return .systemPurple
         case .disk: return .systemBlue
         case .network: return .systemBlue
+        case .claude: return .systemOrange
+        case .clock: return .labelColor
         }
     }
 
@@ -61,6 +67,10 @@ enum IconMetric: String, CaseIterable, Identifiable {
             return [.pie, .bar, .percent, .amount, .io]
         case .network:
             return [.io, .speed]
+        case .claude:
+            return [.limits]
+        case .clock:
+            return [.clock]
         }
     }
 
@@ -88,6 +98,8 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .memory: return s.memory.totalBytes > 0 ? s.memory.usedFraction : nil
         case .disk: return s.disk?.usedFraction
         case .network: return nil
+        case .claude: return s.claude?.fiveHour.map { $0.percent / 100 }
+        case .clock: return nil
         }
     }
 
@@ -99,7 +111,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .gpu: return s.gpuHistory
         case .gpuMemory: return s.gpuMemoryHistory
         case .memory: return s.memoryHistory
-        case .disk, .network: return []
+        case .disk, .network, .claude, .clock: return []
         }
     }
 
@@ -116,7 +128,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
 
 /// How one metric is drawn in the menu bar.
 enum IconStyle: String, CaseIterable, Identifiable {
-    case line, bar, pie, percent, linePercent, io, speed, amount
+    case line, bar, pie, percent, linePercent, io, speed, amount, limits, clock
 
     var id: String { rawValue }
 
@@ -130,6 +142,8 @@ enum IconStyle: String, CaseIterable, Identifiable {
         case .io: return tr("I/O chart", "Gráfico de I/O")
         case .speed: return tr("Speed (text)", "Velocidade (texto)")
         case .amount: return tr("Used / free (GB)", "Usado / livre (GB)")
+        case .limits: return tr("5h / weekly %", "5h / semanal %")
+        case .clock: return tr("Date and time", "Data e hora")
         }
     }
 }
@@ -219,6 +233,10 @@ final class SettingsStore {
     var opacity: OpacitySet {
         didSet { defaults.set(try? JSONEncoder().encode(opacity), forKey: "opacity") }
     }
+    /// Fetch the Claude limits from Anthropic (ClaudeUsageFetcher).
+    var claudeFetch: Bool {
+        didSet { defaults.set(claudeFetch, forKey: "claudeFetch") }
+    }
     /// Text color of the panels as sRGB components; nil = system (white /
     /// black with the usual grays for secondary text).
     var textColor: [Double]? {
@@ -257,6 +275,18 @@ final class SettingsStore {
     }
     /// Sections of the edge-pinned panel that don't open their details on
     /// hover ("Mute mode"; clicking still pins them).
+    /// Time zone identifiers of the clocks, in order (empty = this Mac's).
+    var clockZones: [String] {
+        didSet { defaults.set(clockZones, forKey: "clockZones") }
+    }
+    /// Font size of the menu bar clock (pt).
+    var clockFontSize: Double {
+        didSet { defaults.set(clockFontSize, forKey: "clockFontSize") }
+    }
+    /// Sections hidden from the dashboard (Settings › Dashboard).
+    var hiddenSections: Set<SystemStatKind> {
+        didSet { defaults.set(hiddenSections.map(\.rawValue).sorted(), forKey: "hiddenSections") }
+    }
     var mutedSections: Set<SystemStatKind> {
         didSet { defaults.set(mutedSections.map(\.rawValue).sorted(), forKey: "mutedSections") }
     }
@@ -284,6 +314,7 @@ final class SettingsStore {
         opacity = d.data(forKey: "opacity").flatMap { try? JSONDecoder().decode(OpacitySet.self, from: $0) }
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
         separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
+        claudeFetch = d.bool(forKey: "claudeFetch")
         textColor = (d.array(forKey: "textColor") as? [Double]).flatMap { $0.count == 3 ? $0 : nil }
         panelOpacities = d.data(forKey: "panelOpacitySets")
             .flatMap { try? JSONDecoder().decode([String: OpacitySet].self, from: $0) } ?? [:]
@@ -292,6 +323,9 @@ final class SettingsStore {
         language = d.string(forKey: "language").flatMap(Language.init(rawValue:)) ?? .systemDefault
         autoCheckUpdates = d.object(forKey: "autoCheckUpdates") as? Bool ?? true
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
+        clockZones = d.stringArray(forKey: "clockZones") ?? []
+        clockFontSize = min(12, max(8, d.object(forKey: "clockFontSize") as? Double ?? 8.5))
+        hiddenSections = Set((d.stringArray(forKey: "hiddenSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
         mutedSections = Set((d.stringArray(forKey: "mutedSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
         let savedSections = (d.stringArray(forKey: "sectionOrder") ?? []).compactMap(SystemStatKind.init(rawValue:))
         var seenSections = Set<SystemStatKind>()
@@ -398,6 +432,11 @@ enum Settings {
         set { store.opacity = newValue }
     }
 
+    static var claudeFetch: Bool {
+        get { store.claudeFetch }
+        set { store.claudeFetch = newValue }
+    }
+
     /// Panel text color; nil = system.
     static var textColor: Color? {
         get { store.textColor.map { Color(.sRGB, red: $0[0], green: $0[1], blue: $0[2]) } }
@@ -482,6 +521,22 @@ enum Settings {
     }
 
     static func isMuted(_ kind: SystemStatKind) -> Bool { store.mutedSections.contains(kind) }
+
+    static func isOnDashboard(_ kind: SystemStatKind) -> Bool { !store.hiddenSections.contains(kind) }
+
+    static func setOnDashboard(_ on: Bool, _ kind: SystemStatKind) {
+        if on { store.hiddenSections.remove(kind) } else { store.hiddenSections.insert(kind) }
+    }
+
+    static var clockFontSize: Double {
+        get { store.clockFontSize }
+        set { store.clockFontSize = min(12, max(8, newValue)) }
+    }
+
+    static var clockZones: [String] {
+        get { store.clockZones }
+        set { store.clockZones = newValue }
+    }
 
     static var allMuted: Bool { store.mutedSections.count == SystemStatKind.allCases.count }
 

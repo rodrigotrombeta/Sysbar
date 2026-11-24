@@ -51,13 +51,26 @@ enum StatusIconRenderer {
     ) -> NSImage {
         let widths = config.metrics.map { width(for: $0, config: config) }
         let total = widths.reduce(0, +) + widgetSpacing * CGFloat(max(0, widths.count - 1))
-        let size = NSSize(width: ceil(total), height: height)
+        // A large clock font makes the image taller; the other widgets stay
+        // centered in it.
+        let imageHeight = config.metrics.contains(.clock) ? max(height, clockHeight) : height
+        let size = NSSize(width: ceil(total), height: imageHeight)
 
         let image = NSImage(size: size, flipped: false) { _ in
             let draw = {
                 var x: CGFloat = 0
                 for (index, metric) in config.metrics.enumerated() {
-                    drawWidget(metric: metric, snapshot: snapshot, config: config, originX: x)
+                    if metric == .clock {
+                        drawClocks(textColor: config.isTemplate ? .black : .labelColor,
+                                   rect: NSRect(x: x, y: 0, width: widths[index], height: imageHeight))
+                    } else {
+                        NSGraphicsContext.saveGraphicsState()
+                        let shift = NSAffineTransform()
+                        shift.translateX(by: 0, yBy: (imageHeight - height) / 2)
+                        shift.concat()
+                        drawWidget(metric: metric, snapshot: snapshot, config: config, originX: x)
+                        NSGraphicsContext.restoreGraphicsState()
+                    }
                     x += widths[index] + widgetSpacing
                 }
             }
@@ -84,6 +97,8 @@ enum StatusIconRenderer {
         case .linePercent: return label + chartWidth + gap + percentWidth - 2
         case .speed: return label + speedWidth
         case .amount: return label + speedWidth
+        case .limits: return label + 40
+        case .clock: return clockWidth
         }
     }
 
@@ -110,7 +125,7 @@ enum StatusIconRenderer {
             return
         }
 
-        if config.showLabel {
+        if config.showLabel && !metric.shortLabel.isEmpty {
             drawStackedLabel(metric.shortLabel, color: ink,
                              rect: NSRect(x: x, y: 0, width: labelWidth, height: height))
             x += labelWidth + gap
@@ -154,9 +169,69 @@ enum StatusIconRenderer {
             drawAmounts(used: amounts?.used, free: amounts?.free, binary: metric == .memory, textColor: ink,
                         usedColor: mono ? ink : accent, freeColor: mono ? ink : ink.withAlphaComponent(0.55),
                         rect: NSRect(x: x, y: 0, width: speedWidth, height: height))
+        case .clock:
+            break  // drawn by image(), at its own height
+        case .limits:
+            drawLimits(snapshot.claude, textColor: ink, mono: mono,
+                       rect: NSRect(x: x, y: 0, width: 40, height: height))
         case .percent:
             break
         }
+    }
+
+    // MARK: Clock
+
+    private static var clockFont: NSFont {
+        NSFont.monospacedDigitSystemFont(ofSize: CGFloat(Settings.clockFontSize), weight: .regular)
+    }
+    /// Gap between the two clock lines (digits have no descenders, so the
+    /// lines are spaced by cap height, not full line height).
+    private static var clockGap: CGFloat { max(2, clockFont.capHeight * 0.3) }
+    /// Height of the two clock lines (the menu bar fits about 22 pt).
+    private static var clockHeight: CGFloat { min(22, ceil(clockFont.capHeight * 2 + clockGap + 3)) }
+    private static var clockWidth: CGFloat {
+        ceil(("00/00 00:00" as NSString).size(withAttributes: [.font: clockFont]).width) + 2
+    }
+
+    /// "24/11 13:19" over "24/11 09:19": the first two clocks.
+    private static func drawClocks(textColor: NSColor, rect: NSRect) {
+        let font = clockFont
+        let zones = Array(WorldClock.zones.prefix(2))
+        let now = Date()
+        let cap = font.capHeight
+        let block = zones.count == 1 ? cap : cap * 2 + clockGap
+        let bottom = rect.minY + (rect.height - block) / 2
+        for (i, zone) in zones.enumerated() {
+            let baseline = zones.count == 1 ? bottom : (i == 0 ? bottom + cap + clockGap : bottom)
+            let text = NSAttributedString(string: WorldClock.shortDateTime(now, in: zone),
+                                          attributes: [.font: font, .foregroundColor: textColor])
+            let width = text.size().width
+            text.draw(at: NSPoint(x: rect.maxX - width - 1, y: baseline + font.descender))
+        }
+    }
+
+    /// Two lines, "5h 42%" over "7d 18%"; in color, each tag turns orange or
+    /// red when that window is projected to come close to / hit its limit.
+    private static func drawLimits(_ usage: ClaudeUsage?, textColor: NSColor, mono: Bool, rect: NSRect) {
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .right
+        func line(_ tag: String, _ w: ClaudeWindow?, y: CGFloat) {
+            let riskColor: NSColor = switch w?.risk() ?? 0 {
+            case 2: .systemRed
+            case 1: .systemOrange
+            default: textColor.withAlphaComponent(0.6)
+            }
+            let s = NSMutableAttributedString(
+                string: tag + " ",
+                attributes: [.font: font, .foregroundColor: mono ? textColor : riskColor, .paragraphStyle: para])
+            s.append(NSAttributedString(
+                string: w.map { "\(Int($0.percent.rounded()))%" } ?? "–",
+                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
+            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+        }
+        line("5h", usage?.fiveHour, y: rect.minY + 8)
+        line("7d", usage?.sevenDay, y: rect.minY - 1)
     }
 
     /// Two right-aligned lines: "U 17.1 GB" (used) over "F 6.9 GB" (free).
