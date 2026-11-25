@@ -139,7 +139,7 @@ struct BatteryInfo: Sendable, Equatable {
             isCharging: (p["IsCharging"] as? Bool) ?? false,
             externalConnected: external,
             fullyCharged: (p["FullyCharged"] as? Bool) ?? false,
-            minutesToEmpty: time("AvgTimeToEmpty") ?? (external ? nil : time("TimeRemaining")),
+            minutesToEmpty: external ? nil : (time("AvgTimeToEmpty") ?? time("TimeRemaining")),
             minutesToFull: time("AvgTimeToFull"),
             cycleCount: int("CycleCount"),
             designCycleCount: int("DesignCycleCount9C"),

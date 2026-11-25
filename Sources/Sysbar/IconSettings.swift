@@ -26,6 +26,23 @@ enum IconMetric: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Name in the Settings list (one line).
+    var shortTitle: String {
+        switch self {
+        case .cpu: return "CPU"
+        case .eCores: return "E-cores"
+        case .pCores: return "P-cores"
+        case .gpu: return "GPU"
+        case .gpuMemory: return tr("GPU mem.", "Mem. GPU")
+        case .memory: return tr("Memory", "Memória")
+        case .disk: return tr("Disk", "Disco")
+        case .network: return tr("Network", "Rede")
+        case .claude: return "Claude"
+        case .clock: return tr("Clock", "Relógio")
+        case .battery: return tr("Battery", "Bateria")
+        }
+    }
+
     /// Tiny label drawn next to the chart (stacked vertically, Stats-style).
     var shortLabel: String {
         switch self {
@@ -170,6 +187,14 @@ enum IconColorMode: String, CaseIterable, Identifiable {
         case .utilization: return tr("By utilization", "Por utilização")
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .monochrome: return "circle.lefthalf.filled"
+        case .metric: return "paintpalette"
+        case .utilization: return "gauge.with.dots.needle.33percent"
+        }
+    }
 }
 
 /// Appearance of the panels.
@@ -274,6 +299,16 @@ final class SettingsStore {
     var claudeAccountNames: [String: String] {
         didSet { defaults.set(claudeAccountNames, forKey: "claudeAccountNames") }
     }
+    /// Prometheus /metrics endpoint (MetricsExporter): on/off, where, port.
+    var metricsExport: Bool {
+        didSet { defaults.set(metricsExport, forKey: "metricsExport") }
+    }
+    var metricsListen: String {
+        didSet { defaults.set(metricsListen, forKey: "metricsListen") }
+    }
+    var metricsPort: Int {
+        didSet { defaults.set(metricsPort, forKey: "metricsPort") }
+    }
     /// Fetch the Claude limits from Anthropic (ClaudeUsageFetcher).
     var claudeFetch: Bool {
         didSet { defaults.set(claudeFetch, forKey: "claudeFetch") }
@@ -348,6 +383,9 @@ final class SettingsStore {
 
     private init() {
         let d = UserDefaults.standard
+        // Nothing saved yet in Sysbar's own defaults domain.
+        let domain = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+        let isFreshInstall = d.persistentDomain(forName: domain)?.isEmpty ?? true
         shownMetrics = (d.stringArray(forKey: "iconMetrics") ?? [IconMetric.cpu.rawValue])
             .compactMap(IconMetric.init(rawValue:))
         let saved = (d.stringArray(forKey: "iconOrder") ?? []).compactMap(IconMetric.init(rawValue:))
@@ -363,11 +401,29 @@ final class SettingsStore {
             ?? OpacitySet(all: d.object(forKey: "panelOpacity") as? Double ?? 1)
         separateOpacity = Set(d.stringArray(forKey: "separateOpacityPanels") ?? [])
         claudeFetch = d.bool(forKey: "claudeFetch")
+        metricsExport = d.bool(forKey: "metricsExport")
+        metricsListen = d.string(forKey: "metricsListen") ?? "localhost"
+        metricsPort = d.object(forKey: "metricsPort") as? Int ?? 9101
         chartWindow = d.object(forKey: "chartWindow") as? Double ?? 60
         iconSpacing = d.object(forKey: "iconSpacing") as? Double ?? 6
         pageCount = min(6, max(1, d.object(forKey: "pageCount") as? Int ?? 1))
         pageNames = d.stringArray(forKey: "pageNames") ?? []
         sectionPages = d.dictionary(forKey: "sectionPages") as? [String: Int] ?? [:]
+        if isFreshInstall {
+            // First launch: "Computer" with the machine's metrics, "Office"
+            // with the clock, calendar and Claude limits. Saved right away,
+            // so later launches keep it (and upgrades never get it).
+            let names = ["Computer", "Office"]
+            let pages = Dictionary(uniqueKeysWithValues: SystemStatKind.allCases.map {
+                ($0.rawValue, [.clock, .calendar, .claude].contains($0) ? 1 : 0)
+            })
+            pageCount = names.count
+            pageNames = names
+            sectionPages = pages
+            d.set(names.count, forKey: "pageCount")
+            d.set(names, forKey: "pageNames")
+            d.set(pages, forKey: "sectionPages")
+        }
         pinAllPages = d.bool(forKey: "pinAllPages")
         pageSides = d.dictionary(forKey: "pageSides") as? [String: String] ?? [:]
         // "menu" (under the icon) was removed: the icon opens Float or Full.
@@ -595,6 +651,20 @@ enum Settings {
     static var claudeAccountNames: [String: String] {
         get { store.claudeAccountNames }
         set { store.claudeAccountNames = newValue }
+    }
+
+    static var metricsExport: Bool {
+        get { store.metricsExport }
+        set { store.metricsExport = newValue }
+    }
+    /// MetricsExporter.Address key: "localhost", "tailscale" or "if:<name>".
+    static var metricsListen: String {
+        get { store.metricsListen }
+        set { store.metricsListen = newValue }
+    }
+    static var metricsPort: Int {
+        get { store.metricsPort }
+        set { store.metricsPort = min(65535, max(1024, newValue)) }
     }
 
     static var claudeFetch: Bool {

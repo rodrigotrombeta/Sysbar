@@ -119,6 +119,13 @@ enum Preview {
                 }
             }
             Settings.language = savedLanguage
+            let savedSection = model.settingsSection
+            for section in [SettingsSection.menuBar, .general] {
+                model.settingsSection = section
+                render(SettingsView(model: model), scheme: scheme, appearance: appearance,
+                       to: dir.appendingPathComponent("settings-\(section.rawValue)-\(suffix).png"))
+            }
+            model.settingsSection = savedSection
         }
     }
 

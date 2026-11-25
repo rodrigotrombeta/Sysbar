@@ -51,6 +51,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         model.settingsChanged = { [weak self] in self?.applySettings() }
+        MetricsExporter.shared.attach(model)
+        MetricsExporter.shared.onStatusChange = { [weak self] in
+            self?.model.metricsStatus = MetricsExporter.shared.status
+        }
+        MetricsExporter.shared.apply()
+        // The Tailscale address can come and go: re-check now and then.
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            MainActor.assumeIsolated { MetricsExporter.shared.apply() }
+        }
         model.pin = { [weak self] side in self?.pin(side) }
         model.togglePinKeepingOpen = { [weak self] in self?.togglePinKeepingOpen() }
         model.applyIconOpens = { [weak self] in

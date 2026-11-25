@@ -114,6 +114,11 @@ struct SystemStatsSnapshot: Sendable {
     var memorySwapHistory: [Double] = []
 
     var disk: Disk?
+    /// Cumulative per-CPU ticks (for node_cpu_seconds_total).
+    var cpuTicks: [SystemStatsSampler.CPUTicks] = []
+    /// Cumulative bytes of the primary network interface.
+    var networkRxBytes: UInt64 = 0
+    var networkTxBytes: UInt64 = 0
     /// nil on Macs without a battery.
     var battery: BatteryInfo?
     /// Claude Code 5-hour / weekly limits (set by the AppDelegate).
@@ -268,6 +273,7 @@ final class SystemStatsSampler {
                 appendHistory(&cpuHistory, key: "cpuHistory", usage.total)
             }
             previousTicks = ticks
+            snapshot.cpuTicks = ticks
         }
 
         let devices = Self.readGPUDevices()
@@ -350,6 +356,8 @@ final class SystemStatsSampler {
                 appendHistory(&networkOutHistory, key: "networkOutHistory", rate.write)
             }
             previousNetBytes = (net.rx, net.tx, now)
+            snapshot.networkRxBytes = net.rx
+            snapshot.networkTxBytes = net.tx
         }
 
         // Volume capacity changes slowly; refresh it every 10 s.

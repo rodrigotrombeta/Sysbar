@@ -22,6 +22,36 @@ Available in **English** and **Portuguese**.
 - Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
   ~35 MB of RAM with the panels closed.
 
+## Sysbar is now a Prometheus exporter
+
+Turn on **Settings → Grafana / Prometheus** and Sysbar serves `/metrics`:
+your Mac shows up in Grafana next to the rest of your servers, with the same
+numbers you see in the menu bar.
+
+- **node_exporter-compatible names**, including the Linux memory names
+  (`node_memory_MemTotal_bytes`, `MemAvailable`, `SwapFree`…), so dashboards
+  like *Node Exporter Full* work out of the box.
+- **What node_exporter can't see on macOS**, as `sysbar_*` metrics: GPU usage
+  and memory, E-core / P-core usage, per-core load, Activity Monitor's "App"
+  memory and memory pressure, battery health (cycles, temperature, adapter
+  watts), top processes and Claude Code limits.
+- **Safe by default:** off until you turn it on, and there's no password, so
+  it only listens where you choose — this Mac only, Tailscale, or a VPN or
+  local interface (with a warning) — never on all interfaces.
+
+Prometheus scrape config (port 9101 by default):
+
+```yaml
+- job_name: "mac"
+  static_configs:
+    - targets: ["100.x.y.z:9101"]   # the address shown in Sysbar's Settings
+      labels:
+        instance: "my-mac"
+```
+
+Not a full node_exporter replacement: disk I/O is reported as one total and
+network for the primary interface only — enough for the common dashboards.
+
 ## Screenshots
 
 ![Main panel with the CPU and GPU details pinned beside it](docs/images/hero.png)

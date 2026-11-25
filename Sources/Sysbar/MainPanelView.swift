@@ -320,8 +320,8 @@ private struct SideArrows: View {
 
 // MARK: - Settings
 
-/// One metric in the "Menu bar icon" list: shown toggle, style and color
-/// pickers, and a ≡ handle to drag it to another place in the order.
+/// One metric in the "Menu bar icon" list, on one line: shown checkbox,
+/// name, style menu, color menu and a ≡ handle to drag it elsewhere.
 private struct MetricSettingsRow: View {
     let model: AppModel
     let metric: IconMetric
@@ -329,45 +329,52 @@ private struct MetricSettingsRow: View {
     @State private var targeted = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Toggle(metric.title, isOn: model.metricShown(metric))
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 12, weight: .medium))
-                Spacer(minLength: 4)
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 18)
-                    .contentShape(Rectangle())
-                    .draggable(metric.rawValue) {
-                        Text(metric.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    .onHover { inside in
-                        if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
-                    }
-                    .help(tr("Drag to reorder", "Arraste para reordenar"))
+        let shown = Settings.metrics.contains(metric)
+        HStack(spacing: 4) {
+            Toggle(isOn: model.metricShown(metric)) {
+                Text(metric.shortTitle).lineLimit(1)
             }
-            HStack(spacing: 6) {
-                Picker("", selection: model.metricStyle(metric)) {
-                    ForEach(metric.styles) { Text($0.title).tag($0) }
-                }
-                .labelsHidden()
+            .toggleStyle(.checkbox)
+            .frame(width: 84, alignment: .leading)
+            .help(metric.title)
+            Picker("", selection: model.metricStyle(metric)) {
+                ForEach(metric.styles) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .frame(width: 92)
+            .disabled(!shown || metric.styles.count < 2)
+            Menu {
                 Picker("", selection: model.metricColor(metric)) {
-                    ForEach(IconColorMode.allCases) { Text($0.title).tag($0) }
+                    ForEach(IconColorMode.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 }
+                .pickerStyle(.inline)
                 .labelsHidden()
+            } label: {
+                Image(systemName: Settings.colorMode(for: metric).symbol)
             }
-            .controlSize(.small)
-            .padding(.leading, 20)
-            .disabled(!Settings.metrics.contains(metric))
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 22)
+            .disabled(!shown)
+            .help(tr("Color: ", "Cor: ") + Settings.colorMode(for: metric).title)
+            Spacer(minLength: 0)
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 16)
+                .contentShape(Rectangle())
+                .draggable(metric.rawValue) {
+                    Text(metric.title)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .onHover { inside in
+                    if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+                }
+                .help(tr("Drag to reorder", "Arraste para reordenar"))
         }
-        .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 6)
+        .font(.system(size: 12))
+        .padding(.vertical, 1)
+        .background(RoundedRectangle(cornerRadius: 5)
             .fill(targeted ? Color.accentColor.opacity(0.15) : Color.clear)
             .padding(.horizontal, -4))
         .dropDestination(for: String.self) { items, _ in
@@ -379,7 +386,48 @@ private struct MetricSettingsRow: View {
     }
 }
 
-private struct SettingsView: View {
+/// The Settings groups; one is open at a time.
+enum SettingsSection: String, CaseIterable {
+    case menuBar, dashboard, general, claude, grafana, updates
+
+    var title: String {
+        switch self {
+        case .menuBar: return tr("Menu bar icon", "Ícone na barra de menus")
+        case .dashboard: return tr("Dashboard items", "Itens do dashboard")
+        case .general: return tr("General", "Geral")
+        case .claude: return "Claude Code"
+        case .grafana: return "Grafana / Prometheus"
+        case .updates: return tr("Updates", "Atualizações")
+        }
+    }
+}
+
+/// A clickable group header with a disclosure arrow.
+private struct SettingsGroupHeader: View {
+    let section: SettingsSection
+    let model: AppModel
+
+    var body: some View {
+        let open = model.settingsSection == section
+        Button {
+            model.settingsSection = open ? nil : section
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .rotationEffect(.degrees(open ? 90 : 0))
+                    .frame(width: 12)
+                Text(section.title).font(.system(size: 12, weight: .bold))
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 3)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SettingsView: View {
     let model: AppModel
 
     var body: some View {
@@ -394,8 +442,7 @@ private struct SettingsView: View {
             .help(tr("Float: at the screen edge, as tall as its content. Full: the whole height of the screen. Click outside to close; 📌 keeps it open.",
                      "Flutuante: na lateral da tela, com a altura do conteúdo. Altura toda: a altura inteira da tela. Clique fora para fechar; 📌 mantém aberto."))
             Divider()
-            Text(tr("Menu bar icon", "Ícone na barra de menus"))
-                .font(.system(size: 12, weight: .bold))
+            group(.menuBar) {
             Text(tr("Top to bottom = left to right. Drag ≡ to reorder.",
                     "De cima para baixo = da esquerda para a direita. Arraste ≡ para reordenar."))
                 .font(.system(size: 10))
@@ -416,14 +463,12 @@ private struct SettingsView: View {
                 Text("\(Int(Settings.iconSpacing)) pt")
                     .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
             }
-
-            Divider()
-            Text(tr("Dashboard", "Dashboard")).font(.system(size: 12, weight: .bold))
+            }
+            group(.dashboard) {
             PagesSettings(model: model)
             ClockZonesEditor(model: model)
-
-            Divider()
-            Text(tr("General", "Geral")).font(.system(size: 12, weight: .bold))
+            }
+            group(.general) {
             LabeledContent(tr("Refresh", "Atualização")) {
                 Picker("", selection: model.interval) {
                     ForEach(Settings.intervals, id: \.self) { v in
@@ -476,11 +521,10 @@ private struct SettingsView: View {
                 .padding(.leading, 8)
             Toggle(tr("Open at login", "Abrir ao iniciar sessão"), isOn: LoginItem.binding(model))
                 .toggleStyle(.checkbox)
-
-            Divider()
-            ClaudeConnectionRow(model: model)
-            Divider()
-            Text(tr("Updates", "Atualizações")).font(.system(size: 12, weight: .bold))
+            }
+            group(.claude) { ClaudeConnectionRow(model: model) }
+            group(.grafana) { MetricsExportSettings(model: model) }
+            group(.updates) {
             Toggle(tr("Check for updates automatically", "Verificar atualizações automaticamente"),
                    isOn: model.autoCheckUpdates)
                 .toggleStyle(.checkbox)
@@ -490,12 +534,26 @@ private struct SettingsView: View {
                 Spacer()
                 Button(tr("Check for Updates…", "Verificar atualizações…")) { model.checkForUpdates() }
             }
+            }
         }
         .font(.system(size: 12))
         .controlSize(.small)
         .padding(14)
         .frame(width: panelWidth, alignment: .leading)
         .onAppear { LoginItem.refresh() }
+    }
+
+    /// A group: its header, and its content when it's the open one.
+    @ViewBuilder
+    private func group<Content: View>(_ section: SettingsSection, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsGroupHeader(section: section, model: model)
+            if model.settingsSection == section {
+                VStack(alignment: .leading, spacing: 10) { content() }
+                    .padding(.leading, 18)
+                    .padding(.bottom, 4)
+            }
+        }
     }
 }
 
@@ -718,7 +776,6 @@ private struct ClaudeConnectionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Claude Code").font(.system(size: 12, weight: .bold))
             ClaudeBetaNote()
             Toggle(tr("Fetch limits from Anthropic (every 5 min)", "Buscar limites na Anthropic (a cada 5 min)"),
                    isOn: Binding(get: { Settings.claudeFetch },
@@ -948,6 +1005,68 @@ private struct PagesSettings: View {
                 .padding(.leading, 8)
                 Text(tr("All pages: each page is pinned as its own full-height column; choose each page's edge with its 📌.",
                         "Todas as páginas: cada página vira uma coluna fixada de altura total; escolha a lateral de cada uma no 📌 dela."))
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Prometheus /metrics endpoint for Grafana.
+private struct MetricsExportSettings: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(tr("Export metrics (/metrics)", "Exportar métricas (/metrics)"), isOn: model.metricsExport)
+                .toggleStyle(.checkbox)
+            if Settings.metricsExport {
+                let addresses = MetricsExporter.addresses()
+                let selected = Settings.metricsListen
+                Picker("", selection: model.metricsListen) {
+                    ForEach(addresses, id: \.key) { Text($0.title).tag($0.key) }
+                    if !addresses.contains(where: { $0.key == selected }) {
+                        // The saved choice isn't connected now; keep it selectable.
+                        Text(selected == "tailscale" ? "Tailscale" : selected.replacingOccurrences(of: "if:", with: "")
+                             + tr(" (not connected)", " (desconectada)")).tag(selected)
+                    }
+                }
+                .labelsHidden()
+                .padding(.leading, 8)
+                .help(tr("Where Prometheus can read it from.", "Por onde o Prometheus pode ler."))
+                HStack(spacing: 6) {
+                    Text(tr("Port", "Porta"))
+                    TextField("", value: model.metricsPort, format: .number.grouping(.never))
+                        .textFieldStyle(.roundedBorder).frame(width: 56)
+                }
+                .padding(.leading, 8)
+                if addresses.first(where: { $0.key == selected })?.kind == .local {
+                    Label(tr("Anyone on this network can read these metrics (there's no password). Avoid it on public Wi-Fi.",
+                             "Qualquer pessoa nesta rede pode ler estas métricas (não há senha). Evite em Wi-Fi público."),
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10.5)).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.leading, 8)
+                }
+                if !model.metricsStatus.isEmpty {
+                    HStack(spacing: 4) {
+                        Text(model.metricsStatus)
+                            .font(.system(size: 11).monospaced())
+                            .foregroundStyle(model.metricsStatus.hasPrefix("http") ? Color.primary : Color.red)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                        if model.metricsStatus.hasPrefix("http") {
+                            Button { NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(model.metricsStatus, forType: .string)
+                            } label: { Image(systemName: "doc.on.doc") }
+                                .buttonStyle(.borderless)
+                                .help(tr("Copy the address", "Copiar o endereço"))
+                        }
+                    }
+                    .padding(.leading, 8)
+                }
+                Text(tr("No password: only what can reach the chosen address can read it (never all interfaces). Names follow node_exporter, so its Grafana dashboards work; Sysbar-only metrics start with sysbar_.",
+                        "Sem senha: só quem alcança o endereço escolhido consegue ler (nunca todas as interfaces). Os nomes seguem o node_exporter, então os dashboards dele funcionam no Grafana; as métricas só do Sysbar começam com sysbar_."))
                     .font(.system(size: 10.5)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

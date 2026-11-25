@@ -109,6 +109,24 @@ final class AppModel {
     /// Pages or pinning changed: rebuild the pinned columns.
     @ObservationIgnored var pagesChanged: () -> Void = {}
 
+    /// The open Settings group (one at a time; nil = all closed), remembered.
+    var settingsSection: SettingsSection? = UserDefaults.standard.string(forKey: "settingsSection")
+        .flatMap(SettingsSection.init(rawValue:)) ?? .menuBar {
+        didSet { UserDefaults.standard.set(settingsSection?.rawValue ?? "", forKey: "settingsSection") }
+    }
+
+    /// Prometheus endpoint: address while serving, or why it isn't.
+    var metricsStatus = ""
+    var metricsExport: Binding<Bool> {
+        Binding(get: { Settings.metricsExport }, set: { Settings.metricsExport = $0; MetricsExporter.shared.apply() })
+    }
+    var metricsListen: Binding<String> {
+        Binding(get: { Settings.metricsListen }, set: { Settings.metricsListen = $0; MetricsExporter.shared.apply() })
+    }
+    var metricsPort: Binding<Int> {
+        Binding(get: { Settings.metricsPort }, set: { Settings.metricsPort = $0; MetricsExporter.shared.apply() })
+    }
+
     /// Moves a pinned page's column (nil = the single pinned panel) to an edge.
     func sendPage(_ page: Int?, to side: PinSide) {
         if let page, page > 0 {
