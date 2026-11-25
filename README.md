@@ -2,6 +2,9 @@
 
 # Sysbar
 
+**The most beautiful Grafana / Prometheus exporter for macOS** — and a
+menu bar system monitor.
+
 A tiny macOS menu bar app that shows the **System Stats** panel from
 [oMLX](https://github.com/jundot/omlx) — CPU E/P-core usage, thermal state,
 load average, uptime, GPU usage, GPU memory and a memory breakdown — plus
@@ -14,6 +17,12 @@ Available in **English** and **Portuguese**.
   <a href="docs/sysbar-demo.mp4"><img src="docs/images/demo.gif" width="800"
      alt="Sysbar demo: animated menu bar icon, main panel and pinned detail panels"></a>
   <br><sub>▶︎ Click for the full-quality <a href="docs/sysbar-demo.mp4">demo video (MP4, with sound)</a>.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/prometheus-side-by-side.png" width="800"
+       alt="Sysbar's menu bar panel next to Grafana showing the same Mac, scraped from Sysbar's /metrics">
+  <br><sub>The same Mac in the menu bar and in Grafana, scraped from Sysbar's <code>/metrics</code>.</sub>
 </p>
 
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
@@ -48,6 +57,11 @@ Prometheus scrape config (port 9101 by default):
       labels:
         instance: "my-mac"
 ```
+
+A ready-made Grafana dashboard for the `sysbar_*` metrics (E/P cores, GPU,
+App memory, battery, Claude Code limits, top processes) is in
+[`docs/grafana/sysbar-dashboard.json`](docs/grafana/sysbar-dashboard.json):
+in Grafana, **Dashboards → New → Import** and upload it.
 
 Not a full node_exporter replacement: disk I/O is reported as one total and
 network for the primary interface only — enough for the common dashboards.
