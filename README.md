@@ -25,8 +25,9 @@ Available in **English** and **Portuguese**.
 </p>
 
 - Native Swift/AppKit + SwiftUI, no dependencies, no Xcode project.
-- Public APIs only (Mach host statistics, IOKit accelerator and block-storage
-  stats, `vm_statistics64`) — no `sudo`, no helper tools.
+- Public APIs for the core stats (Mach host statistics, IOKit accelerator and
+  block-storage stats, `vm_statistics64`); temperatures and power are read
+  from the SMC, the same way Stats and iStat Menus do. No `sudo` needed.
 - Runs as a menu bar–only app (no Dock icon). Small: ~0.8 MB on disk,
   ~35 MB of RAM with the panels closed.
 
@@ -288,4 +289,6 @@ are adapted from [oMLX](https://github.com/jundot/omlx) by jundot, licensed
 under the Apache License 2.0 (see `LICENSE`). A copy of the license ships in
 every build and package (`Sysbar.app/Contents/Resources/LICENSE`, plus
 `LICENSE.txt` in the DMG). The menu bar icon design is
-inspired by [Stats](https://github.com/exelban/stats) (no code copied).
+inspired by [Stats](https://github.com/exelban/stats). The table that maps SMC
+keys to sensor names per chip (in `Sensors.swift`) comes from Stats by Serhiy
+Mytrovtsiy, MIT License — see `THIRD_PARTY_STATS_LICENSE.txt`.

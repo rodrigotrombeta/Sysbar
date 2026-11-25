@@ -6,7 +6,7 @@ import SwiftUI
 
 /// A metric that can drive (animate) the status-bar icon.
 enum IconMetric: String, CaseIterable, Identifiable {
-    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network, claude, clock, battery
+    case cpu, eCores, pCores, gpu, gpuMemory, memory, disk, network, claude, clock, battery, temperature
 
     var id: String { rawValue }
 
@@ -23,6 +23,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .claude: return tr("Claude Code limits", "Limites do Claude Code")
         case .clock: return tr("Clock (first 2 time zones)", "Relógio (2 primeiros fusos)")
         case .battery: return tr("Battery", "Bateria")
+        case .temperature: return tr("Temperature (CPU / GPU)", "Temperatura (CPU / GPU)")
         }
     }
 
@@ -40,6 +41,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .claude: return "Claude"
         case .clock: return tr("Clock", "Relógio")
         case .battery: return tr("Battery", "Bateria")
+        case .temperature: return tr("Temp.", "Temp.")
         }
     }
 
@@ -57,6 +59,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .claude: return "CC"
         case .clock: return ""
         case .battery: return "BAT"
+        case .temperature: return "TMP"
         }
     }
 
@@ -73,6 +76,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .claude: return .systemOrange
         case .clock: return .labelColor
         case .battery: return .systemGreen
+        case .temperature: return .systemOrange
         }
     }
 
@@ -93,6 +97,8 @@ enum IconMetric: String, CaseIterable, Identifiable {
             return [.clock]
         case .battery:
             return [.battery, .batteryIcon, .batteryVertical, .batteryIconVertical, .percent]
+        case .temperature:
+            return [.tempCPU, .tempCPUHot, .tempCPUGPU]
         }
     }
 
@@ -123,6 +129,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .claude: return s.claude?.fiveHour.map { $0.percent / 100 }
         case .clock: return nil
         case .battery: return s.battery?.level
+        case .temperature: return s.sensors?.average(.cpu).map { $0 / 100 }
         }
     }
 
@@ -134,7 +141,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
         case .gpu: return s.gpuHistory
         case .gpuMemory: return s.gpuMemoryHistory
         case .memory: return s.memoryHistory
-        case .disk, .network, .claude, .clock, .battery: return []
+        case .disk, .network, .claude, .clock, .battery, .temperature: return []
         }
     }
 
@@ -151,7 +158,7 @@ enum IconMetric: String, CaseIterable, Identifiable {
 
 /// How one metric is drawn in the menu bar.
 enum IconStyle: String, CaseIterable, Identifiable {
-    case line, bar, pie, percent, linePercent, io, speed, amount, limits, clock, battery, batteryIcon, batteryVertical, batteryIconVertical
+    case line, bar, pie, percent, linePercent, io, speed, amount, limits, clock, battery, batteryIcon, batteryVertical, batteryIconVertical, tempCPU, tempCPUHot, tempCPUGPU
 
     var id: String { rawValue }
 
@@ -171,6 +178,9 @@ enum IconStyle: String, CaseIterable, Identifiable {
         case .batteryIcon: return tr("Battery icon", "Ícone de bateria")
         case .batteryVertical: return tr("% + battery (vertical)", "% + bateria (vertical)")
         case .batteryIconVertical: return tr("Battery icon (vertical)", "Ícone de bateria (vertical)")
+        case .tempCPU: return tr("CPU average °C", "CPU média °C")
+        case .tempCPUHot: return tr("CPU hottest °C", "CPU mais quente °C")
+        case .tempCPUGPU: return tr("CPU + GPU °C", "CPU + GPU °C")
         }
     }
 }
@@ -363,6 +373,10 @@ final class SettingsStore {
         didSet { defaults.set(clockZones, forKey: "clockZones") }
     }
     /// Font size of the menu bar clock (pt).
+    /// 24-hour clock (else 12-hour with AM/PM).
+    var clock24h: Bool {
+        didSet { defaults.set(clock24h, forKey: "clock24h") }
+    }
     var clockFontSize: Double {
         didSet { defaults.set(clockFontSize, forKey: "clockFontSize") }
     }
@@ -439,6 +453,7 @@ final class SettingsStore {
         pinSide = d.string(forKey: "pinSide").flatMap(PinSide.init(rawValue:))
         clockZones = d.stringArray(forKey: "clockZones") ?? []
         clockFontSize = min(12, max(8, d.object(forKey: "clockFontSize") as? Double ?? 8.5))
+        clock24h = d.object(forKey: "clock24h") as? Bool ?? true
         hiddenSections = Set((d.stringArray(forKey: "hiddenSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
         mutedSections = Set((d.stringArray(forKey: "mutedSections") ?? []).compactMap(SystemStatKind.init(rawValue:)))
         let savedSections = (d.stringArray(forKey: "sectionOrder") ?? []).compactMap(SystemStatKind.init(rawValue:))
@@ -761,6 +776,11 @@ enum Settings {
 
     static func setOnDashboard(_ on: Bool, _ kind: SystemStatKind) {
         if on { store.hiddenSections.remove(kind) } else { store.hiddenSections.insert(kind) }
+    }
+
+    static var clock24h: Bool {
+        get { store.clock24h }
+        set { store.clock24h = newValue }
     }
 
     static var clockFontSize: Double {

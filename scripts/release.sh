@@ -20,6 +20,8 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Apache-2.0 §4(a): ship the license with every distributed copy (before signing).
 cp LICENSE "$APP/Contents/Resources/LICENSE"
+# MIT notice for the SMC sensor table taken from Stats (Sensors.swift).
+cp THIRD_PARTY_STATS_LICENSE.txt "$APP/Contents/Resources/THIRD_PARTY_STATS_LICENSE.txt"
 # Ad-hoc signature (no Developer ID): users confirm the first launch once.
 codesign --force --deep --sign - "$APP"
 codesign --verify --strict "$APP"

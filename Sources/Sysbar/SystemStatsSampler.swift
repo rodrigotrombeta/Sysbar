@@ -33,6 +33,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
     case clock
     case calendar
     case battery
+    case sensors
 
     var tag: String {
         switch self {
@@ -46,6 +47,7 @@ enum SystemStatKind: String, CaseIterable, Hashable, Sendable {
         case .clock: return "CLOCK"
         case .calendar: return "CALENDAR"
         case .battery: return "BATTERY"
+        case .sensors: return "SENSORS"
         }
     }
 }
@@ -121,6 +123,11 @@ struct SystemStatsSnapshot: Sendable {
     var networkTxBytes: UInt64 = 0
     /// nil on Macs without a battery.
     var battery: BatteryInfo?
+    /// SMC temperatures / power; nil when the SMC can't be read.
+    var sensors: SensorsSnapshot?
+    /// Hottest CPU / GPU sensor, °C.
+    var cpuTemperatureHistory: [Double] = []
+    var gpuTemperatureHistory: [Double] = []
     /// Claude Code 5-hour / weekly limits (set by the AppDelegate).
     var claude: ClaudeUsage?
     /// Every Claude Code account (default first); `claude` is the first.
@@ -216,6 +223,11 @@ final class SystemStatsSampler {
     private var cachedDisk: SystemStatsSnapshot.Disk?
     private var diskReadAt: TimeInterval = -.infinity
     private var cachedBattery: BatteryInfo?
+    private lazy var smc = SMCReader(cpuName: cpuName)
+    private var cachedSensors: SensorsSnapshot?
+    private var sensorsReadAt: TimeInterval = -.infinity
+    private var cpuTemperatureHistory: [Double] = []
+    private var gpuTemperatureHistory: [Double] = []
     private var batteryReadAt: TimeInterval = -.infinity
     private let eCoreCount = SystemStatsSampler.readECoreCount()
 
@@ -375,6 +387,19 @@ final class SystemStatsSampler {
         }
         snapshot.battery = cachedBattery
 
+        // SMC sensors: every 2 s (about 130 small IOKit calls).
+        if now - sensorsReadAt >= 2 {
+            cachedSensors = smc?.read()
+            sensorsReadAt = now
+        }
+        snapshot.sensors = cachedSensors
+        if let s = cachedSensors {
+            if let v = s.hottest(.cpu) { appendHistory(&cpuTemperatureHistory, key: "cpuTemperatureHistory", v) }
+            if let v = s.hottest(.gpu) { appendHistory(&gpuTemperatureHistory, key: "gpuTemperatureHistory", v) }
+        }
+        snapshot.cpuTemperatureHistory = cpuTemperatureHistory
+        snapshot.gpuTemperatureHistory = gpuTemperatureHistory
+
         var loads = [Double](repeating: 0, count: 3)
         if getloadavg(&loads, 3) == 3 {
             snapshot.loadAverages = loads
@@ -455,6 +480,7 @@ final class SystemStatsSampler {
             (\.diskWriteHistory, "diskWriteHistory"), (\.memoryInHistory, "memoryInHistory"),
             (\.memoryOutHistory, "memoryOutHistory"), (\.networkInHistory, "networkInHistory"),
             (\.networkOutHistory, "networkOutHistory"),
+            (\.cpuTemperatureHistory, "cpuTemperatureHistory"), (\.gpuTemperatureHistory, "gpuTemperatureHistory"),
         ]
         for (keyPath, key) in series { self[keyPath: keyPath] = seed(key) }
     }

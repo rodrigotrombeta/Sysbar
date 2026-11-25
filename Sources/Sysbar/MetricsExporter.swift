@@ -258,6 +258,28 @@ final class MetricsExporter {
             }
         }
 
+        if let sn = s.sensors {
+            // node_exporter's hwmon names, so hardware dashboards pick them up.
+            out.gauge("node_hwmon_temp_celsius", "SMC temperature sensors.",
+                      sn.temperatures.map { (["chip": "smc", "sensor": $0.name, "key": $0.key, "group": $0.group.rawValue], $0.value) })
+            var summary: [([String: String], Double)] = []
+            for g in SensorReading.Group.allCases {
+                if let v = sn.average(g) { summary.append((["group": g.rawValue, "stat": "average"], v)) }
+                if let v = sn.hottest(g) { summary.append((["group": g.rawValue, "stat": "max"], v)) }
+            }
+            out.gauge("sysbar_temperature_celsius", "Temperature per sensor group (average and hottest).", summary)
+            var power: [([String: String], Double)] = []
+            if let v = sn.systemPower { power.append((["source": "system"], v)) }
+            if let v = sn.dcInPower { power.append((["source": "dc_in"], v)) }
+            if let v = sn.batteryPower { power.append((["source": "battery"], v)) }
+            out.gauge("sysbar_power_watts", "Power from the SMC.", power)
+            var volts: [([String: String], Double)] = []
+            if let v = sn.dcInVoltage { volts.append((["rail": "dc_in"], v)) }
+            if let v = sn.rail12V { volts.append((["rail": "12v"], v)) }
+            out.gauge("sysbar_voltage_volts", "Voltages from the SMC.", volts)
+            if let v = sn.dcInCurrent { out.gauge("sysbar_current_amps", "DC In current.", [(["rail": "dc_in"], v)]) }
+        }
+
         var limits: [([String: String], Double)] = []
         var resets: [([String: String], Double)] = []
         for usage in s.claudeAccounts {

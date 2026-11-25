@@ -28,6 +28,7 @@ extension SystemStatKind {
         case .clock: return tr("Clock", "Relógio")
         case .calendar: return tr("Calendar", "Calendário")
         case .battery: return tr("Battery", "Bateria")
+        case .sensors: return tr("Sensors", "Sensores")
         }
     }
 }
@@ -74,6 +75,7 @@ struct DetailContainer: View {
             case .clock: ClockStatsPanel(model: model, inDetail: true)
             case .calendar: CalendarStatsPanel(model: model, inDetail: true)
             case .battery: BatteryDetail(model: model)
+            case .sensors: SensorsDetail(model: model)
             }
         }
         .padding(14)

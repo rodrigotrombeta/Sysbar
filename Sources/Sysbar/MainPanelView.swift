@@ -110,6 +110,7 @@ private struct SectionHost: View {
             case .clock: ClockStatsPanel(model: model)
             case .calendar: CalendarStatsPanel(model: model)
             case .battery: BatteryStatsPanel(snapshot: s)
+            case .sensors: SensorsStatsPanel(snapshot: s)
             }
         }
         .overlay(alignment: .top) { dragHandle }
@@ -463,6 +464,17 @@ struct SettingsView: View {
                 Text("\(Int(Settings.iconSpacing)) pt")
                     .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
             }
+            HStack(spacing: 6) {
+                Text(tr("Text size", "Tamanho do texto")).font(.system(size: 12))
+                Slider(value: Binding(get: { Settings.clockFontSize },
+                                      set: { model.clockFontSize.wrappedValue = ($0 * 2).rounded() / 2 }),
+                       in: 8...12)
+                    .controlSize(.small).frame(width: 110)
+                Text(String(format: "%.1f pt", Settings.clockFontSize))
+                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+            }
+            .help(tr("Size of every text in the menu bar: clock, Claude limits, temperature, used / free, network speed, percentages.",
+                     "Tamanho de todos os textos na barra de menus: relógio, limites do Claude, temperatura, usado / livre, velocidade da rede, porcentagens."))
             }
             group(.dashboard) {
             PagesSettings(model: model)

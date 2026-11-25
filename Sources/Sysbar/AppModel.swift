@@ -159,6 +159,10 @@ final class AppModel {
         Binding(get: { Settings.chartWindow }, set: { Settings.chartWindow = $0 })
     }
 
+    var clock24h: Binding<Bool> {
+        Binding(get: { Settings.clock24h }, set: { Settings.clock24h = $0; self.bump() })
+    }
+
     var clockFontSize: Binding<Double> {
         Binding(get: { Settings.clockFontSize }, set: { Settings.clockFontSize = $0; self.bump() })
     }

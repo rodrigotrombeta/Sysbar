@@ -13,11 +13,23 @@ enum WorldClock {
         return zones.isEmpty ? [TimeZone.current] : zones
     }
 
-    /// "24/11 13:19" in `zone`.
+    /// "24/11 13:19" (or "24/11 1:19 PM") in `zone`.
     static func shortDateTime(_ date: Date, in zone: TimeZone) -> String {
+        format(date, zone, "dd/MM " + timePattern)
+    }
+
+    /// "24/11".
+    static func date(_ date: Date, in zone: TimeZone) -> String { format(date, zone, "dd/MM") }
+    /// "13:19" or "1:19 PM".
+    static func time(_ date: Date, in zone: TimeZone) -> String { format(date, zone, timePattern) }
+
+    private static var timePattern: String { Settings.clock24h ? "HH:mm" : "h:mm a" }
+
+    private static func format(_ date: Date, _ zone: TimeZone, _ pattern: String) -> String {
         let f = DateFormatter()
         f.timeZone = zone
-        f.dateFormat = "dd/MM HH:mm"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = pattern
         return f.string(from: date)
     }
 
@@ -288,13 +300,12 @@ struct ClockZonesEditor: View {
                 .padding(.leading, 8)
             }
             HStack(spacing: 6) {
-                Text(tr("Menu bar font size", "Tamanho da fonte na barra")).font(.system(size: 11.5))
-                Slider(value: Binding(get: { Settings.clockFontSize },
-                                      set: { model.clockFontSize.wrappedValue = ($0 * 2).rounded() / 2 }),
-                       in: 8...12)
-                    .controlSize(.small).frame(width: 100)
-                Text(String(format: "%.1f pt", Settings.clockFontSize))
-                    .font(.system(size: 10.5).monospacedDigit()).foregroundStyle(.secondary)
+                Text(tr("Time format", "Formato da hora")).font(.system(size: 11.5))
+                Picker("", selection: model.clock24h) {
+                    Text("24h").tag(true)
+                    Text("12h").tag(false)
+                }
+                .labelsHidden().pickerStyle(.segmented).fixedSize()
             }
             .padding(.leading, 8)
             HStack(spacing: 6) {

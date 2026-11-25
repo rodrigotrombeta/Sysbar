@@ -333,7 +333,7 @@ struct SystemStatsPanelStack: View {
             DiskStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
         case .network:
             NetworkStatsPanel(snapshot: snapshot, refreshInterval: refreshInterval)
-        case .processes, .claude, .clock, .calendar, .battery:
+        case .processes, .claude, .clock, .calendar, .battery, .sensors:
             EmptyView()
         }
     }

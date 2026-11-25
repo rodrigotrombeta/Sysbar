@@ -9,9 +9,9 @@ enum StatusIconRenderer {
     private static let labelWidth: CGFloat = 7
     private static let chartWidth: CGFloat = 32
     private static let barWidth: CGFloat = 7
-    private static let percentWidth: CGFloat = 28
+    private static var percentWidth: CGFloat { ceil(28 * textScale) }
     private static let pieWidth: CGFloat = 18
-    private static let speedWidth: CGFloat = 50
+    private static var speedWidth: CGFloat { ceil(50 * textScale) }
     /// I/O charts never scale below this (bytes/s), so idle noise stays flat.
     private static let ioFloor: Double = 256_000
     private static let gap: CGFloat = 2
@@ -53,7 +53,13 @@ enum StatusIconRenderer {
         let total = widths.reduce(0, +) + widgetSpacing * CGFloat(max(0, widths.count - 1))
         // A large clock font makes the image taller; the other widgets stay
         // centered in it.
-        let imageHeight = config.metrics.contains(.clock) ? max(height, clockHeight) : height
+        // Text widgets follow the menu bar text size; a large one makes the
+        // image taller (up to the menu bar's ~22 pt), the rest stay centered.
+        let hasText = config.metrics.contains { m in
+            m == .clock || [.limits, .amount, .speed, .tempCPU, .tempCPUHot, .tempCPUGPU, .percent,
+                            .linePercent, .battery, .batteryVertical].contains(config.style(m))
+        }
+        let imageHeight = hasText ? max(height, clockHeight) : height
         let size = NSSize(width: ceil(total), height: imageHeight)
 
         let image = NSImage(size: size, flipped: false) { _ in
@@ -97,12 +103,14 @@ enum StatusIconRenderer {
         case .linePercent: return label + chartWidth + gap + percentWidth - 2
         case .speed: return label + speedWidth
         case .amount: return label + speedWidth
-        case .limits: return label + 40
+        case .limits: return label + limitsWidth
         case .clock: return clockWidth
         case .battery: return batteryTextWidth + gap + batteryWidth
         case .batteryIcon: return batteryWidth
         case .batteryVertical: return batteryTextWidth + gap + verticalBatteryWidth
         case .batteryIconVertical: return verticalBatteryWidth
+        case .tempCPU, .tempCPUHot: return label + tempWidth
+        case .tempCPUGPU: return label + tempPairWidth
         }
     }
 
@@ -184,16 +192,50 @@ enum StatusIconRenderer {
             break  // drawn by image(), at its own height
         case .limits:
             drawLimits(snapshot.claude, textColor: ink, mono: mono,
-                       rect: NSRect(x: x, y: 0, width: 40, height: height))
+                       rect: NSRect(x: x, y: 0, width: limitsWidth, height: height))
+        case .tempCPU, .tempCPUHot:
+            let v = style == .tempCPU ? snapshot.sensors?.average(.cpu) : snapshot.sensors?.hottest(.cpu)
+            drawTemperatures([("", v)], ink: ink, mono: mono, rect: NSRect(x: x, y: 0, width: tempWidth, height: height))
+        case .tempCPUGPU:
+            drawTemperatures([("C", snapshot.sensors?.average(.cpu)), ("G", snapshot.sensors?.average(.gpu))],
+                             ink: ink, mono: mono, rect: NSRect(x: x, y: 0, width: tempPairWidth, height: height))
         case .percent, .battery, .batteryIcon, .batteryVertical, .batteryIconVertical:
             break
+        }
+    }
+
+    // MARK: Temperature
+
+    /// "45°" (one line, larger) or "C 45°" over "G 44°"; in color, the
+    /// value is green below 60 °C, orange to 80, red above.
+    private static func drawTemperatures(_ lines: [(tag: String, value: Double?)], ink: NSColor, mono: Bool, rect: NSRect) {
+        let single = lines.count == 1
+        let font = single ? NSFont.monospacedDigitSystemFont(ofSize: 11 * textScale, weight: .medium) : textFont()
+        let texts = lines.map { line -> NSAttributedString in
+            let color: NSColor = mono ? ink : line.value.map { $0 < 60 ? .systemGreen : $0 < 80 ? .systemOrange : .systemRed } ?? ink
+            // Two lines read like the Claude limits: the number in the text
+            // color, the C / G tag colored. One line: the number colored.
+            let s = NSMutableAttributedString()
+            if !line.tag.isEmpty {
+                s.append(NSAttributedString(string: line.tag + " ",
+                                            attributes: [.font: font, .foregroundColor: mono ? ink.withAlphaComponent(0.6) : color]))
+            }
+            s.append(NSAttributedString(string: line.value.map { "\(Int($0.rounded()))°" } ?? "–",
+                                        attributes: [.font: font, .foregroundColor: single ? color : ink]))
+            return s
+        }
+        if single {
+            let s = texts[0], size = s.size()
+            s.draw(at: NSPoint(x: rect.maxX - size.width - 1, y: rect.midY - size.height / 2))
+        } else {
+            drawTwoLines(texts[0], texts[1], font: font, rect: rect)
         }
     }
 
     // MARK: Battery
 
     private static let batteryWidth: CGFloat = 24
-    private static let batteryTextWidth: CGFloat = 26
+    private static var batteryTextWidth: CGFloat { ceil(26 * textScale) }
     private static let verticalBatteryWidth: CGFloat = 11
 
     /// "80%" then a battery outline filled to the level, with a bolt when
@@ -203,7 +245,7 @@ enum StatusIconRenderer {
         var x = rect.minX
         let level = b?.level ?? 0
         if withText {
-            let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            let font = NSFont.monospacedDigitSystemFont(ofSize: 11 * textScale, weight: .medium)
             let para = NSMutableParagraphStyle()
             para.alignment = .right
             let s = NSAttributedString(string: b.map { "\(Int(($0.level * 100).rounded()))%" } ?? "–",
@@ -255,79 +297,94 @@ enum StatusIconRenderer {
         tinted.draw(in: r, from: .zero, operation: mono ? .destinationOut : .sourceOver, fraction: 1)
     }
 
-    // MARK: Clock
+    // MARK: Text (clock, limits, amounts, speed, temperature)
 
-    private static var clockFont: NSFont {
-        NSFont.monospacedDigitSystemFont(ofSize: CGFloat(Settings.clockFontSize), weight: .regular)
+    /// The menu bar text size (Settings), and its ratio to the 8.5 pt default.
+    private static var textSize: CGFloat { CGFloat(Settings.clockFontSize) }
+    private static var textScale: CGFloat { textSize / 8.5 }
+    private static func textFont(_ weight: NSFont.Weight = .semibold) -> NSFont {
+        NSFont.monospacedDigitSystemFont(ofSize: textSize, weight: weight)
     }
-    /// Gap between the two clock lines (digits have no descenders, so the
-    /// lines are spaced by cap height, not full line height).
+
+    private static var clockFont: NSFont { textFont(.regular) }
+
+    /// Widths that fit the widest expected text, so no widget leaves a
+    /// gap beside it.
+    private static func fit(_ sample: String, _ font: NSFont) -> CGFloat {
+        ceil((sample as NSString).size(withAttributes: [.font: font]).width) + 2
+    }
+    private static var limitsWidth: CGFloat { fit("100% 7d", textFont()) }
+    private static var tempPairWidth: CGFloat { fit("C 100°", textFont()) }
+    private static var tempWidth: CGFloat {
+        fit("100°", NSFont.monospacedDigitSystemFont(ofSize: 11 * textScale, weight: .medium))
+    }
+    /// Gap between two text lines (digits have no descenders, so the lines
+    /// are spaced by cap height, not full line height).
     private static var clockGap: CGFloat { max(2, clockFont.capHeight * 0.3) }
-    /// Height of the two clock lines (the menu bar fits about 22 pt).
+    /// Height of two text lines (the menu bar fits about 22 pt).
     private static var clockHeight: CGFloat { min(22, ceil(clockFont.capHeight * 2 + clockGap + 3)) }
     private static var clockWidth: CGFloat {
-        ceil(("00/00 00:00" as NSString).size(withAttributes: [.font: clockFont]).width) + 2
+        let h24 = Settings.clock24h
+        let samples = WorldClock.zones.count == 1
+            ? ["00/00", h24 ? "00:00" : "12:00 PM"]
+            : [h24 ? "00/00 00:00" : "00/00 12:00 PM"]
+        return samples.map { ceil(($0 as NSString).size(withAttributes: [.font: clockFont]).width) }.max()! + 2
     }
 
-    /// "24/11 13:19" over "24/11 09:19": the first two clocks.
+    /// Two right-aligned lines, spaced by cap height and centered in `rect`
+    /// (so they fit the menu bar at every text size).
+    private static func drawTwoLines(_ top: NSAttributedString, _ bottom: NSAttributedString, font: NSFont, rect: NSRect) {
+        let cap = font.capHeight
+        let gap = max(2, cap * 0.3)
+        let base = rect.minY + (rect.height - (cap * 2 + gap)) / 2
+        for (text, baseline) in [(top, base + cap + gap), (bottom, base)] {
+            text.draw(at: NSPoint(x: rect.maxX - text.size().width - 1, y: baseline + font.descender))
+        }
+    }
+
+    /// One clock: its date over its time. Two: "24/11 13:19" over "24/11 09:19".
     private static func drawClocks(textColor: NSColor, rect: NSRect) {
         let font = clockFont
         let zones = Array(WorldClock.zones.prefix(2))
         let now = Date()
-        let cap = font.capHeight
-        let block = zones.count == 1 ? cap : cap * 2 + clockGap
-        let bottom = rect.minY + (rect.height - block) / 2
-        for (i, zone) in zones.enumerated() {
-            let baseline = zones.count == 1 ? bottom : (i == 0 ? bottom + cap + clockGap : bottom)
-            let text = NSAttributedString(string: WorldClock.shortDateTime(now, in: zone),
-                                          attributes: [.font: font, .foregroundColor: textColor])
-            let width = text.size().width
-            text.draw(at: NSPoint(x: rect.maxX - width - 1, y: baseline + font.descender))
-        }
+        let lines = zones.count == 1
+            ? [WorldClock.date(now, in: zones[0]), WorldClock.time(now, in: zones[0])]
+            : zones.map { WorldClock.shortDateTime(now, in: $0) }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        drawTwoLines(NSAttributedString(string: lines[0], attributes: attrs),
+                     NSAttributedString(string: lines[1], attributes: attrs), font: font, rect: rect)
     }
 
     /// Two lines, "42% 5h" over "18% 7d"; in color, each tag turns orange or
     /// red when that window is projected to come close to / hit its limit.
     private static func drawLimits(_ usage: ClaudeUsage?, textColor: NSColor, mono: Bool, rect: NSRect) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
-        let para = NSMutableParagraphStyle()
-        para.alignment = .right
-        func line(_ tag: String, _ w: ClaudeWindow?, y: CGFloat) {
+        let font = textFont()
+        func line(_ tag: String, _ w: ClaudeWindow?) -> NSAttributedString {
             let riskColor: NSColor = switch w?.risk() ?? 0 {
             case 2: .systemRed
             case 1: .systemOrange
             default: textColor.withAlphaComponent(0.6)
             }
             // "6% 5h": right-aligned, so the 5h / 7d tags line up.
-            let s = NSMutableAttributedString(
-                string: (w.map { "\(Int($0.percent.rounded()))%" } ?? "–") + " ",
-                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para])
-            s.append(NSAttributedString(
-                string: tag,
-                attributes: [.font: font, .foregroundColor: mono ? textColor : riskColor, .paragraphStyle: para]))
-            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+            let s = NSMutableAttributedString(string: (w.map { "\(Int($0.percent.rounded()))%" } ?? "–") + " ",
+                                              attributes: [.font: font, .foregroundColor: textColor])
+            s.append(NSAttributedString(string: tag, attributes: [.font: font, .foregroundColor: mono ? textColor : riskColor]))
+            return s
         }
-        line("5h", usage?.fiveHour, y: rect.minY + 8)
-        line("7d", usage?.sevenDay, y: rect.minY - 1)
+        drawTwoLines(line("5h", usage?.fiveHour), line("7d", usage?.sevenDay), font: font, rect: rect)
     }
 
     /// Two right-aligned lines: "U 17.1 GB" (used) over "F 6.9 GB" (free).
     private static func drawAmounts(used: UInt64?, free: UInt64?, binary: Bool, textColor: NSColor,
                                     usedColor: NSColor, freeColor: NSColor, rect: NSRect) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
-        let para = NSMutableParagraphStyle()
-        para.alignment = .right
-        func line(_ tag: String, _ bytes: UInt64?, _ tagColor: NSColor, y: CGFloat) {
-            let s = NSMutableAttributedString(
-                string: tag + " ",
-                attributes: [.font: font, .foregroundColor: tagColor, .paragraphStyle: para])
-            s.append(NSAttributedString(
-                string: bytes.map { shortBytes($0, binary: binary) } ?? "–",
-                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
-            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+        let font = textFont()
+        func line(_ tag: String, _ bytes: UInt64?, _ tagColor: NSColor) -> NSAttributedString {
+            let s = NSMutableAttributedString(string: tag + " ", attributes: [.font: font, .foregroundColor: tagColor])
+            s.append(NSAttributedString(string: bytes.map { shortBytes($0, binary: binary) } ?? "–",
+                                        attributes: [.font: font, .foregroundColor: textColor]))
+            return s
         }
-        line("U", used, usedColor, y: rect.minY + 8)
-        line("F", free, freeColor, y: rect.minY - 1)
+        drawTwoLines(line("U", used, usedColor), line("F", free, freeColor), font: font, rect: rect)
     }
 
     /// "17.1 GB", "429 GB", "1.2 TB". Memory in binary units (like the
@@ -438,20 +495,14 @@ enum StatusIconRenderer {
     /// Two right-aligned lines, Stats-style: "↓ 1.2 MB/s" over "↑ 34 KB/s".
     private static func drawSpeed(down: Double?, up: Double?, textColor: NSColor,
                                   downColor: NSColor, upColor: NSColor, rect: NSRect) {
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 8.5, weight: .semibold)
-        let para = NSMutableParagraphStyle()
-        para.alignment = .right
-        func line(_ arrow: String, _ value: Double?, _ arrowColor: NSColor, y: CGFloat) {
-            let s = NSMutableAttributedString(
-                string: arrow + " ",
-                attributes: [.font: font, .foregroundColor: arrowColor, .paragraphStyle: para])
-            s.append(NSAttributedString(
-                string: SystemStatsSampler.formatRate(value),
-                attributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: para]))
-            s.draw(in: NSRect(x: rect.minX, y: y, width: rect.width, height: 10))
+        let font = textFont()
+        func line(_ arrow: String, _ value: Double?, _ arrowColor: NSColor) -> NSAttributedString {
+            let s = NSMutableAttributedString(string: arrow + " ", attributes: [.font: font, .foregroundColor: arrowColor])
+            s.append(NSAttributedString(string: SystemStatsSampler.formatRate(value),
+                                        attributes: [.font: font, .foregroundColor: textColor]))
+            return s
         }
-        line("↑", up, upColor, y: rect.minY + 8)
-        line("↓", down, downColor, y: rect.minY - 1)
+        drawTwoLines(line("↑", up, upColor), line("↓", down, downColor), font: font, rect: rect)
     }
 
     private static func drawBar(segments: [(Double, NSColor)], track: NSColor,
@@ -568,23 +619,20 @@ enum StatusIconRenderer {
         para.alignment = .center
 
         if let label {
-            let labelAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 7, weight: .bold),
-                .foregroundColor: color,
-                .paragraphStyle: para,
-            ]
-            NSAttributedString(string: label, attributes: labelAttrs)
-                .draw(in: NSRect(x: rect.minX, y: rect.minY + 9, width: rect.width, height: 9))
-            let valueAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .semibold),
-                .foregroundColor: color,
-                .paragraphStyle: para,
-            ]
-            NSAttributedString(string: text, attributes: valueAttrs)
-                .draw(in: NSRect(x: rect.minX, y: rect.minY - 1.5, width: rect.width, height: 12))
+            // Label over value, spaced by cap height and centered, so the
+            // pair fits the menu bar at every text size.
+            let labelFont = NSFont.systemFont(ofSize: 7 * textScale, weight: .bold)
+            let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10 * textScale, weight: .semibold)
+            let gap = max(1.5, valueFont.capHeight * 0.25)
+            let block = labelFont.capHeight + gap + valueFont.capHeight
+            let base = rect.minY + (rect.height - block) / 2
+            for (string, font, baseline) in [(label, labelFont, base + valueFont.capHeight + gap), (text, valueFont, base)] {
+                let s = NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color])
+                s.draw(at: NSPoint(x: rect.midX - s.size().width / 2, y: baseline + font.descender))
+            }
         } else {
             let valueAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold),
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11 * textScale, weight: .semibold),
                 .foregroundColor: color,
                 .paragraphStyle: para,
             ]
