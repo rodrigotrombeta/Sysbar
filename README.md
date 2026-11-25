@@ -2,8 +2,7 @@
 
 # Sysbar
 
-**The most beautiful Grafana / Prometheus exporter for macOS** — and a
-menu bar system monitor.
+A menu bar system monitor that is **the most beautiful Grafana / Prometheus exporter for macOS**
 
 A tiny macOS menu bar app that shows the **System Stats** panel from
 [oMLX](https://github.com/jundot/omlx) — CPU E/P-core usage, thermal state,
