@@ -63,8 +63,12 @@ App memory, battery, Claude Code limits, top processes) is in
 [`docs/grafana/sysbar-dashboard.json`](docs/grafana/sysbar-dashboard.json):
 in Grafana, **Dashboards → New → Import** and upload it.
 
-Not a full node_exporter replacement: disk I/O is reported as one total and
-network for the primary interface only — enough for the common dashboards.
+It covers what macOS can report without root: CPU, memory and vmstat, disk
+I/O (as one total over all disks), every active network interface, volumes,
+processes and threads, file descriptors, UDP / ICMP, clock sync, temperatures
+and the power adapter. Panels for Linux-only internals (slab, huge pages,
+systemd, softnet, conntrack, pressure stall) stay empty, and so do the TCP
+ones: macOS reports TCP statistics as zeros even to `netstat -s`.
 
 ## Screenshots
 

@@ -38,6 +38,8 @@ final class MetricsExporter {
     var onStatusChange: () -> Void = {}
 
     private weak var model: AppModel?
+    /// Disk busy time accumulated across scrapes (see renderNodeCollectors).
+    var diskBusy: (busyNs: UInt64, wallNs: UInt64, total: Double)?
     private var listener: NWListener?
     private var running: (host: String, port: UInt16)?
     private let queue = DispatchQueue(label: "local.sysbar.metrics")
@@ -138,6 +140,20 @@ final class MetricsExporter {
 
     // MARK: Metrics
 
+    /// uname(3), with node_exporter's label names. Read once: it doesn't change while running.
+    private static let unameLabels: [String: String] = {
+        var u = utsname()
+        guard uname(&u) == 0 else { return [:] }
+        func field<T>(_ value: T) -> String {
+            withUnsafeBytes(of: value) { raw in
+                String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+        }
+        return ["sysname": field(u.sysname), "nodename": field(u.nodename),
+                "release": field(u.release), "version": field(u.version),
+                "machine": field(u.machine), "domainname": "(none)"]
+    }()
+
     /// The exposition text, built from the latest sample.
     func render() -> String {
         var out = MetricsText()
@@ -148,6 +164,10 @@ final class MetricsExporter {
                   [(["version": UpdateChecker.currentVersion], 1)])
 
         // node_exporter-compatible.
+        // Dashboards like "Node Exporter Full" list the hosts from
+        // node_uname_info, so without it the Mac never shows up in them.
+        out.gauge("node_uname_info", "Labeled system information as provided by the uname system call.",
+                  [(Self.unameLabels, 1)])
         let ticksPerSecond = Double(max(1, sysconf(Int32(_SC_CLK_TCK))))
         var cpu: [([String: String], Double)] = []
         for (i, t) in s.cpuTicks.enumerated() {
@@ -194,23 +214,7 @@ final class MetricsExporter {
         out.gauge("node_boot_time_seconds", "Boot time, Unix seconds.",
                   [([:], (Date().timeIntervalSince1970 - s.uptimeSeconds).rounded())])
 
-        out.counter("node_disk_read_bytes_total", "Bytes read from all disks.",
-                    [(["device": "all"], Double(s.diskTotalRead))])
-        out.counter("node_disk_written_bytes_total", "Bytes written to all disks.",
-                    [(["device": "all"], Double(s.diskTotalWritten))])
-
-        if let iface = s.networkInterface {
-            out.counter("node_network_receive_bytes_total", "Bytes received.",
-                        [(["device": iface], Double(s.networkRxBytes))])
-            out.counter("node_network_transmit_bytes_total", "Bytes sent.",
-                        [(["device": iface], Double(s.networkTxBytes))])
-        }
-
-        if let d = s.disk {
-            let labels = ["mountpoint": "/", "device": d.name, "fstype": "apfs"]
-            out.gauge("node_filesystem_size_bytes", "Volume size.", [(labels, Double(d.totalBytes))])
-            out.gauge("node_filesystem_avail_bytes", "Space available.", [(labels, Double(d.freeBytes))])
-        }
+        renderNodeCollectors(into: &out, snapshot: s)
 
         // Sysbar-only.
         var usage: [([String: String], Double)] = []
@@ -343,7 +347,7 @@ final class MetricsExporter {
 }
 
 /// Builds Prometheus text exposition (one HELP/TYPE block per metric).
-private struct MetricsText {
+struct MetricsText {
     private(set) var text = ""
 
     mutating func gauge(_ name: String, _ help: String, _ samples: [([String: String], Double)]) {
