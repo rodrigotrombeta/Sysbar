@@ -409,9 +409,56 @@ extension MetricsExporter {
                       [(["power_supply": "AC"], b.externalConnected ? 1 : 0)])
         }
 
+        renderProcessMetrics(into: &out)
+
         out.gauge("node_scrape_collector_duration_seconds", "How long each collector took.",
                   durations.map { (["collector": $0.0], $0.1) })
         out.gauge("node_scrape_collector_success", "1 if the collector succeeded.",
                   durations.map { (["collector": $0.0], 1) })
+    }
+}
+
+// MARK: - The exporter's own process
+
+extension MetricsExporter {
+    /// The process_* metrics every Prometheus client library exports about
+    /// itself; "Node Exporter Full" charts them (memory, CPU, open files).
+    func renderProcessMetrics(into out: inout MetricsText) {
+        let pid = getpid()
+        var task = proc_taskinfo()
+        let size = Int32(MemoryLayout<proc_taskinfo>.size)
+        if proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, size) == size {
+            var timebase = mach_timebase_info_data_t()
+            mach_timebase_info(&timebase)
+            let ns = Double(task.pti_total_user + task.pti_total_system) * Double(timebase.numer) / Double(timebase.denom)
+            out.counter("process_cpu_seconds_total", "Total user and system CPU time spent in seconds.", [([:], ns / 1e9)])
+            out.gauge("process_resident_memory_bytes", "Resident memory size in bytes.", [([:], Double(task.pti_resident_size))])
+            out.gauge("process_virtual_memory_bytes", "Virtual memory size in bytes.", [([:], Double(task.pti_virtual_size))])
+        }
+        let fdBytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        if fdBytes > 0 {
+            var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(fdBytes) / MemoryLayout<proc_fdinfo>.stride)
+            let used = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, fdBytes)
+            if used >= 0 {
+                out.gauge("process_open_fds", "Number of open file descriptors.",
+                          [([:], Double(Int(used) / MemoryLayout<proc_fdinfo>.stride))])
+            }
+        }
+        var limit = rlimit()
+        if getrlimit(RLIMIT_NOFILE, &limit) == 0 {
+            out.gauge("process_max_fds", "Maximum number of open file descriptors.", [([:], Double(limit.rlim_cur))])
+        }
+        if getrlimit(RLIMIT_AS, &limit) == 0 {
+            out.gauge("process_virtual_memory_max_bytes", "Maximum amount of virtual memory available in bytes.",
+                      [([:], Double(limit.rlim_cur))])
+        }
+        var info = kinfo_proc()
+        var infoSize = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        if sysctl(&mib, 4, &info, &infoSize, nil, 0) == 0 {
+            let start = info.kp_proc.p_starttime
+            out.gauge("process_start_time_seconds", "Start time of the process since unix epoch in seconds.",
+                      [([:], Double(start.tv_sec) + Double(start.tv_usec) / 1e6)])
+        }
     }
 }
